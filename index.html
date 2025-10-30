@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AuraLab — Home</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg-1:#0e1511;
+      --bg-2:#131c16;
+      --bg-3:#1d2921;
+      --panel:rgba(19,28,22,0.82);
+      --panel-soft:rgba(34,47,39,0.38);
+      --accent-1:#7ec47a; 
+      --accent-2:#9dd99a; 
+      --accent-3:#3f866b;
+      --line:rgba(158,220,157,0.14);
+      --line-strong:rgba(158,220,157,0.28);
+      --text:#f4fbf4;
+      --muted:#b5c9b8;
+      --radius-xl:18px; --radius-lg:14px; --radius-md:12px; --radius-sm:10px;
+      --shadow:0 10px 24px rgba(0,0,0,0.28);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(880px 500px at 8% -6%, rgba(126,196,122,0.16), transparent 60%),
+        radial-gradient(700px 480px at 90% 14%, rgba(52,126,99,0.16), transparent 55%),
+        linear-gradient(180deg, var(--bg-2), var(--bg-1) 35%, var(--bg-3) 100%);
+      overflow:hidden;
+    }
+    .app{
+      max-width:1180px; height:100vh; margin:0 auto; padding:12px 16px;
+      display:grid; grid-template-rows:56px 1fr; gap:10px;
+    }
+
+    .topbar{
+      background:linear-gradient(180deg, rgba(19,28,22,0.96), rgba(11,16,13,0.45));
+      border:1px solid rgba(158,220,157,0.22); border-radius:var(--radius-xl); box-shadow:var(--shadow);
+      display:flex; align-items:center; justify-content:space-between; padding:8px 12px; min-height:56px;
+      backdrop-filter:blur(9px);
+    }
+    .brand{ font-weight:800; letter-spacing:.3px; font-size:18px; color:var(--text); display:flex; gap:6px; align-items:center; }
+    .brand-dot{ width:9px; height:9px; background:radial-gradient(circle at 20% 20%, #fff 0, #7ec47a 55%, transparent 80%); border-radius:999px; }
+    .top-actions{ display:flex; gap:8px }
+    .btn{
+      appearance:none; cursor:pointer; background:linear-gradient(180deg, rgba(244,251,244,0.025), rgba(244,251,244,0.01));
+      color:var(--text); border:1px solid rgba(158,220,157,0.3); padding:8px 12px; border-radius:12px;
+      font-weight:800; font-size:12.5px; white-space:nowrap;
+    }
+    .btn.primary{
+      background:linear-gradient(180deg, #9dd99a, #7ec47a);
+      color:#0f2514;
+      border:1px solid rgba(244,251,244,0.38);
+    }
+
+    .main{ display:grid; grid-template-columns:300px 1fr; gap:12px; min-height:0 }
+    .panel,.workspace{
+      background:linear-gradient(180deg, rgba(19,28,22,0.75), rgba(10,14,12,0.35));
+      border:1px solid rgba(158,220,157,0.16); border-radius:var(--radius-xl); box-shadow:var(--shadow);
+      padding:12px; backdrop-filter:blur(6px); min-height:0;
+    }
+    aside{ min-height:0; display:grid; grid-template-rows:1.3fr .9fr; gap:10px; height:100% }
+
+    .panel-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px }
+    .panel-title{ font-weight:800; letter-spacing:.35px; font-size:12.5px; text-transform:uppercase; color:var(--muted) }
+
+    .campaign-panel{ display:flex; flex-direction:column; min-height:0; }
+    .camp-search{ position:relative; margin-bottom:8px; }
+    .camp-search input{
+      width:100%; background:rgba(244,251,244,0.02); border:1px solid rgba(158,220,157,0.20);
+      border-radius:12px; padding:7px 28px 7px 10px; color:var(--text); font:inherit; outline:none;
+    }
+    .camp-search svg{ position:absolute; right:8px; top:6px; color:var(--muted); }
+    .campaign-list{
+      flex:1;
+      display:flex; flex-direction:column; gap:8px;
+      overflow-y:auto;
+      border-radius:14px;
+      padding-right:4px;
+    }
+    .campaign-list::-webkit-scrollbar{ width:5px; }
+    .campaign-list::-webkit-scrollbar-thumb{ background:rgba(244,251,244,0.25); border-radius:999px; }
+    .campaign-card{
+      border:1px solid transparent;
+      background:rgba(244,251,244,0.015);
+      border-radius:var(--radius-md);
+      padding:8px 10px;
+      display:flex; align-items:center; justify-content:space-between; min-height:50px;
+      gap:4px;
+      cursor:pointer;
+      transition:background .15s ease, border .15s ease;
+    }
+    .campaign-card.active{
+      border:1px solid rgba(157,217,154,0.45);
+      background:radial-gradient(circle at 10% 10%, rgba(157,217,154,0.16), rgba(19,28,22,0));
+      box-shadow:0 0 0 1px rgba(157,217,154,0.12);
+    }
+    .campaign-name{ font-weight:800; }
+    .campaign-meta{ color:var(--muted); font-weight:800; font-size:12px; letter-spacing:.2px }
+    .campaign-empty{ color:rgba(244,251,244,0.42); font-size:12px; text-align:center; padding:12px 4px; }
+
+    .consistency{ display:flex; flex-direction:column; gap:10px; height:100% }
+    .gauge-wrap{ display:grid; place-items:center }
+    .gauge{
+      width:120px; height:120px; border-radius:999px; position:relative;
+      background:
+        conic-gradient(var(--accent-1) 0deg, var(--accent-1) calc(360deg * .82), rgba(255,255,255,0) calc(360deg * .82)),
+        radial-gradient(circle at 50% 50%, rgba(14,21,17,0.9) 58%, rgba(126,196,122,0.25) 60%, rgba(63,134,107,0.15) 62%, transparent 63%);
+      box-shadow:inset 0 2px 12px rgba(255,255,255,0.02);
+    }
+    .gauge span{ position:absolute; inset:0; display:grid; place-items:center; font-size:24px; font-weight:900 }
+    .vibe-chips{
+      display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:2px;
+    }
+    .vibe-chip{
+      padding:6px 10px; border-radius:999px; background:rgba(244,251,244,0.03); border:1px solid rgba(158,220,157,0.12);
+      font-size:13px; font-weight:800; color:var(--muted);
+    }
+
+    .workspace{ display:flex; flex-direction:column; gap:10px; min-height:0 }
+    .workspace-header{ display:flex; align-items:center; justify-content:space-between; border-bottom:1px dashed rgba(158,220,157,0.12); padding-bottom:6px }
+    .workspace-title{ display:flex; align-items:baseline; gap:8px }
+    .campaign-heading{ font-size:18px; font-weight:900; letter-spacing:.2px }
+    .count{ font-weight:900; color:var(--muted); font-size:12px; letter-spacing:.2px }
+    .ws-actions{ display:flex; gap:6px }
+    .i-btn{ height:32px; width:32px; display:grid; place-items:center; cursor:pointer; border-radius:10px; background:rgba(244,251,244,0.02); border:1px solid rgba(158,220,157,0.26); color:var(--text) }
+    .i-btn.accent{ background:linear-gradient(180deg, #9dd99a, #7ec47a); color:#0f2514; border:1px solid rgba(244,251,244,0.35) }
+
+    .posts{
+      display:grid;
+      grid-template-columns:1.1fr 0.9fr;
+      grid-template-rows: minmax(188px, 1fr) minmax(188px, 1fr);
+      gap:10px;
+      min-height:0;
+      height:calc(100% - 42px);
+    }
+    .post{
+      background:rgba(244,251,244,0.015);
+      border:1px solid rgba(158,220,157,0.12);
+      border-radius:var(--radius-lg);
+      box-shadow:var(--shadow);
+      padding:10px;
+      display:flex; flex-direction:column; gap:8px; min-height:0;
+    }
+    .post-head{ display:flex; align-items:center; justify-content:space-between }
+    .index-badge{ min-width:26px; height:26px; border-radius:999px; display:grid; place-items:center;
+      background:linear-gradient(180deg, rgba(157,217,154,0.4), rgba(63,134,107,0.12));
+      border:1px solid rgba(244,251,244,0.4); font-weight:900; font-size:12.5px; color:#fff; }
+    .post-actions{ display:flex; gap:6px }
+    .post-section-title{ font-size:11.5px; text-transform:uppercase; letter-spacing:.55px; color:var(--muted); font-weight:800 }
+    .post-box{
+      background:linear-gradient(180deg, rgba(244,251,244,0.025), rgba(244,251,244,0.01));
+      border:1px dashed rgba(158,220,157,0.25); border-radius:var(--radius-sm);
+      padding:8px; font-size:13.5px; line-height:1.42; min-height:54px; color:var(--text); overflow:auto;
+    }
+    .post-chips{ display:flex; gap:8px; flex-wrap:wrap }
+    .post-chip{
+      padding:6px 10px; border-radius:999px;
+      background:rgba(244,251,244,0.03);
+      border:1px solid rgba(158,220,157,0.25);
+      font-size:13px; font-weight:800; color:var(--muted); backdrop-filter:blur(4px)
+    }
+    .media-placeholder{ height:66px; border-radius:10px;
+      background:linear-gradient(120deg, rgba(126,196,122,0.1), rgba(63,134,107,0.22));
+      border:1px solid rgba(158,220,157,0.3); display:grid; place-items:center; font-weight:800; color:rgba(244,251,244,0.85); font-size:12.5px }
+    .add-post{
+      width:100%; border:1.5px dashed rgba(158,220,157,0.6); border-radius:var(--radius-lg);
+      background:rgba(244,251,244,0.01); color:var(--text); font-weight:900; font-size:16px;
+      display:grid; place-items:center; cursor:pointer;
+    }
+    .add-post span{ display:block; font-size:24px; line-height:1; }
+
+    .overlay{ position:fixed; inset:0; display:none; place-items:center; z-index:50; background:rgba(5,9,6,0.78); }
+    .modal{ width:520px; max-width:calc(100vw - 40px); background:rgba(19,28,22,0.96); border:1px solid rgba(158,220,157,0.3); border-radius:16px; box-shadow:var(--shadow); padding:16px; display:grid; gap:14px; }
+    .modal h3{ margin:0; font-size:18px; font-weight:900; letter-spacing:.2px }
+    .modal .actions{ display:flex; justify-content:flex-end; gap:8px }
+    .m-btn{ appearance:none; border:1px solid rgba(158,220,157,0.35); border-radius:12px; padding:8px 14px; font-weight:900; font-size:13px; color:var(--text); background:rgba(244,251,244,0.02); cursor:pointer; }
+    .m-btn.primary{ background:linear-gradient(180deg, #9dd99a, #7ec47a); color:#0f2514; border:1px solid rgba(244,251,244,0.18); }
+    .modal p{ margin:0; line-height:1.45; font-size:14px }
+    .modal .field{ width:100%; border-radius:12px; border:1px dashed rgba(158,220,157,0.22); background:rgba(244,251,244,0.02); padding:10px; display:block; color:var(--text); font:inherit; }
+
+    .hidden{ display:none; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-dot"></span> AuraLab</div>
+      <div class="top-actions">
+        <button class="btn primary" data-action="simulate">Simulate Rollout</button>
+        <button class="btn" data-action="logout">Logout</button>
+      </div>
+    </header>
+
+    <section class="main">
+      <aside>
+        <div class="panel campaign-panel">
+          <div class="panel-header">
+            <div class="panel-title">Campaigns</div>
+            <div class="i-btn" data-action="create-campaign" title="Create campaign">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <div class="camp-search">
+            <input id="campSearch" type="text" placeholder="Search campaigns…" aria-label="Search campaigns">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="11" cy="11" r="5.5" stroke="currentColor" stroke-width="1.5" opacity="0.5" />
+              <path d="m16 16 2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5" />
+            </svg>
+          </div>
+          <div class="campaign-list" id="campaignList">
+            <div class="campaign-card active" data-name="NYC Rooftop" data-posts="3"><div class="campaign-name">NYC Rooftop</div><div class="campaign-meta">3 posts</div></div>
+            <div class="campaign-card" data-name="Autumn Milk Tea" data-posts="4"><div class="campaign-name">Autumn Milk Tea</div><div class="campaign-meta">4 posts</div></div>
+            <div class="campaign-card" data-name="Lazy Sunday Noon" data-posts="1"><div class="campaign-name">Lazy Sunday Noon</div><div class="campaign-meta">1 post</div></div>
+            <div class="campaign-card" data-name="Rainy Boston Street" data-posts="5"><div class="campaign-name">Rainy Boston Street</div><div class="campaign-meta">5 posts</div></div>
+            <div class="campaign-card" data-name="Cat on Sofa" data-posts="7"><div class="campaign-name">Cat on Sofa</div><div class="campaign-meta">7 posts</div></div>
+            <div class="campaign-card" data-name="LA Coastline" data-posts="4"><div class="campaign-name">LA Coastline</div><div class="campaign-meta">4 posts</div></div>
+            <div class="campaign-card" data-name="Seattle Citywalk" data-posts="3"><div class="campaign-name">Seattle Citywalk</div><div class="campaign-meta">3 posts</div></div>
+            <div class="campaign-card" data-name="Golden Hour Rooftop" data-posts="2"><div class="campaign-name">Golden Hour Rooftop</div><div class="campaign-meta">2 posts</div></div>
+          </div>
+        </div>
+
+        <div class="panel" style="display:flex; flex-direction:column;">
+          <div class="panel-header">
+            <div class="panel-title">Voice Consistency</div>
+          </div>
+          <div class="consistency">
+            <div class="gauge-wrap"><div class="gauge"><span>82%</span></div></div>
+            <div class="vibe-chips">
+              <span class="vibe-chip">rooftop quiet</span>
+              <span class="vibe-chip">soft urban</span>
+              <span class="vibe-chip">cinematic green</span>
+              <span class="vibe-chip">late-night teaser</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace" aria-live="polite">
+        <div class="workspace-header">
+          <div class="workspace-title">
+            <div class="campaign-heading" id="wsTitle">NYC Rooftop</div><div class="count" id="wsCount">3 posts</div>
+          </div>
+          <div class="ws-actions">
+            <div class="i-btn" data-action="delete-campaign" title="Delete campaign">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div class="i-btn accent" data-action="share" title="Share campaign">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M15 8l-6 4 6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="18" cy="6" r="3" stroke="currentColor" stroke-width="2"/>
+                <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                <circle cx="18" cy="18" r="3" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <section class="posts" aria-label="Posts under campaign">
+          <article class="post" data-post-id="1">
+            <div class="post-head">
+              <div class="index-badge">1</div>
+              <div class="post-actions">
+                <div class="i-btn" title="Edit post (not wired)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14.06 4.94l3.75 3.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="i-btn delete-post-btn" data-index="1" title="Delete post">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+              </div>
+            </div>
+            <div class="post-section-title">Content</div>
+            <div class="post-box">Starlit skyline, soft breeze, quiet laughs. The city hums below while we chase the first hint of dawn. ✨🌃</div>
+            <div class="post-section-title">Hashtags</div>
+            <div class="post-chips">
+              <span class="post-chip">#NYC</span>
+              <span class="post-chip">#teaser</span>
+              <span class="post-chip">#nightshoot</span>
+              <span class="post-chip">#rooftop</span>
+            </div>
+            <div class="post-section-title">Photos</div>
+            <div class="post-box" style="display:grid;place-items:center;color:rgba(244,251,244,0.85);font-weight:850;">— no photo attached —</div>
+          </article>
+
+          <article class="post" data-post-id="2">
+            <div class="post-head">
+              <div class="index-badge">2</div>
+              <div class="post-actions">
+                <div class="i-btn" title="Edit post (not wired)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14.06 4.94l3.75 3.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <div class="i-btn delete-post-btn" data-index="2" title="Delete post">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+              </div>
+            </div>
+            <div class="post-section-title">Content</div>
+            <div class="post-box">Steel and glass turn to watercolor as the horizon blushes. Holding onto this stillness before the city wakes. 🌅</div>
+            <div class="post-section-title">Hashtags</div>
+            <div class="post-chips">
+              <span class="post-chip">#NYC</span>
+              <span class="post-chip">#sunrise</span>
+              <span class="post-chip">#rooftop</span>
+            </div>
+            <div class="post-section-title">Photos</div>
+            <div class="media-placeholder">dawn.png</div>
+          </article>
+
+          <article class="post" data-post-id="3">
+            <div class="post-head">
+              <div class="index-badge">3</div>
+              <div class="post-actions">
+                <a class="i-btn" id="editPost3Btn" title="Edit post 3" style="text-decoration:none;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14.06 4.94l3.75 3.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </a>
+                <div class="i-btn delete-post-btn" data-index="3" title="Delete post">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+              </div>
+            </div>
+            <div class="post-section-title">Content</div>
+            <div class="post-box">A rooftop whisper: “stay a little longer.” City lights dim, first birds call, and plans for today feel miles away. 🕊️</div>
+            <div class="post-section-title">Hashtags</div>
+            <div class="post-chips">
+              <span class="post-chip">#NYC</span>
+              <span class="post-chip">#rooftop</span>
+              <span class="post-chip">#nightshoot</span>
+            </div>
+            <div class="post-section-title">Photos</div>
+            <div class="media-placeholder">skylight.png</div>
+          </article>
+
+          <button class="add-post" id="addPostBtn" aria-label="Create new post">
+            <span>+</span>
+          </button>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay-share" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Share campaign</h3>
+      <div>
+        <label class="m-row" style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <input type="radio" name="share" checked style="accent-color:#9dd99a;">
+          <p>Anyone with the link can <strong>view</strong> it</p>
+        </label>
+        <label class="m-row" style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <input type="radio" name="share" style="accent-color:#9dd99a;">
+          <p>Anyone with the link can <strong>edit</strong> it</p>
+        </label>
+        <label class="m-row" style="display:flex;gap:10px;align-items:center;">
+          <input type="radio" name="share" style="accent-color:#9dd99a;">
+          <p>Restricted settings</p>
+        </label>
+      </div>
+      <div class="actions">
+        <button class="m-btn primary close-modal">Copy link</button>
+        <button class="m-btn close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay-create" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Create a new campaign</h3>
+      <input class="field" id="newCampaignName" placeholder="Campaign name" />
+      <div class="actions">
+        <button class="m-btn primary" data-action="confirm-create">Confirm</button>
+        <button class="m-btn close-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay-del-camp" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Delete campaign</h3>
+      <p>Are you sure you want to delete this whole campaign?</p>
+      <div class="actions">
+        <button class="m-btn primary" data-action="confirm-delete-campaign">Yes</button>
+        <button class="m-btn close-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay-del-post" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Delete post</h3>
+      <p id="delPostText">Are you sure you want to delete post 1?</p>
+      <div class="actions">
+        <button class="m-btn primary" data-action="confirm-delete-post">Yes</button>
+        <button class="m-btn close-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="aura.js"></script>
+</body>
+</html>

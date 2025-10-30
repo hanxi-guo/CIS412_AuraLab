@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AuraLab — Edit Post (NYC Rooftop)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-1:#0e1511; --bg-2:#131c16; --bg-3:#1d2921;
+    --accent-1:#7ec47a; --accent-2:#9dd99a;
+    --outline:rgba(158,220,157,0.18); --outline-2:rgba(158,220,157,0.35);
+    --text:#f4fbf4; --muted:#b5c9b8;
+    --shadow:0 8px 22px rgba(0,0,0,0.38);
+    --r-xl:18px; --r-lg:16px; --r-md:12px; --r-sm:10px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; font-family:Inter,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif; color:var(--text);
+    background:
+      radial-gradient(880px 520px at 5% -10%, rgba(126,196,122,0.15), transparent 60%),
+      radial-gradient(880px 520px at 88% 10%, rgba(63,134,107,0.16), transparent 60%),
+      linear-gradient(180deg, var(--bg-2), var(--bg-1) 40%, var(--bg-3) 100%);
+    overflow:hidden;
+  }
+
+  .app{
+    height:100vh; max-width:1180px; margin:0 auto; padding:12px 16px; display:grid;
+    grid-template-rows: 1fr 56px; gap:10px;
+  }
+
+  .editor{
+    background:linear-gradient(180deg, rgba(19,28,22,0.75), rgba(10,14,12,0.35));
+    border:1px solid var(--outline); border-radius:var(--r-xl); box-shadow:var(--shadow);
+    padding:12px; backdrop-filter:blur(6px);
+    display:grid; grid-template-rows: 44px 1fr 124px; gap:10px; min-height:0;
+  }
+
+  .hdr{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    padding: 2px 4px 8px; border-bottom:1px dashed rgba(158,220,157,0.15);
+  }
+  .title{ font-size:20px; font-weight:900; letter-spacing:.25px; }
+  .context{ color:var(--muted); font-weight:800; font-size:12.5px; }
+
+  .form{
+    display:grid;
+    grid-template-columns: 1.4fr 1fr;
+    grid-template-rows: 160px 130px;
+    gap:10px; min-height:0;
+  }
+
+  .block{ min-height:0; }
+  .label{
+    font-size:12.5px; font-weight:900; color:var(--muted); letter-spacing:.3px;
+    text-transform:uppercase; margin:0 0 6px 2px;
+  }
+  .box{
+    height:100%;
+    background:linear-gradient(180deg, rgba(244,251,244,.015), rgba(244,251,244,.004));
+    border:1px dashed rgba(158,220,157,.28);
+    border-radius:var(--r-lg);
+    padding:10px; min-height:0;
+  }
+
+  textarea{
+    width:100%; height:calc(100% - 36px); min-height:72px; resize:none;
+    outline:none; border:none; background:transparent; color:var(--text);
+    font-size:14.5px; line-height:1.45;
+  }
+  .toolbar{ display:flex; gap:8px; align-items:center; }
+  .pill{
+    border:1px solid rgba(244,251,244,0.12); border-radius:12px; height:30px;
+    display:flex; align-items:center; gap:0; padding:0 8px;
+    background:rgba(244,251,244,.025); color:var(--text); font-weight:800; font-size:12.5px;
+    box-shadow:var(--shadow);
+  }
+
+  .photos-col{ display:grid; grid-template-rows: 1fr 1fr; gap:10px; min-height:0; }
+  .files-wrap{ display:grid; grid-auto-rows: minmax(28px, auto); gap:8px; overflow:auto; }
+  .file-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:6px 10px; border-radius:12px;
+    background:rgba(244,251,244,.035);
+    border:1px solid rgba(158,220,157,0.18); color:var(--muted); font-weight:800; font-size:12.5px;
+  }
+  .x{
+    width:18px; height:18px; display:grid; place-items:center; border-radius:999px;
+    border:1px solid rgba(158,220,157,0.4); background:rgba(244,251,244,.04); color:var(--text);
+    cursor:pointer;
+  }
+  .plus-btn{
+    width:30px; height:30px; display:grid; place-items:center; border-radius:10px;
+    border:1px solid rgba(158,220,157,0.4); background:rgba(244,251,244,.02); color:var(--text);
+    box-shadow:var(--shadow); cursor:pointer;
+  }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    display:inline-flex; align-items:center; gap:8px; padding:6px 10px;
+    border-radius:999px; background:rgba(244,251,244,.03); border:1px solid rgba(158,220,157,0.26);
+    color:var(--muted); font-weight:800; font-size:13px;
+  }
+  .chip .x{ border-color:rgba(244,251,244,0.4); }
+
+  .analysis{ display:grid; grid-template-rows: 24px 1fr; gap:8px; min-height:0; }
+  .label-row{ display:flex; align-items:center; justify-content:space-between; }
+  .analysis .box{ height:100%; }
+  .analysis .text{ font-size:14.5px; line-height:1.5; overflow:hidden; }
+
+  .actions{ display:flex; justify-content:flex-end; gap:8px; align-items:center; }
+  .btn{
+    appearance:none; border:1px solid rgba(158,220,157,0.35); border-radius:14px;
+    padding:10px 16px; font-weight:900; font-size:13.5px; color:var(--text);
+    background:rgba(244,251,244,.02); box-shadow:var(--shadow); cursor:pointer;
+  }
+  .btn.primary{
+    background:linear-gradient(180deg, var(--accent-2), var(--accent-1));
+    color:#0f2514; border:1px solid rgba(244,251,244,0.45);
+  }
+  svg{ display:block; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="editor">
+      <div class="hdr">
+        <div class="title">Edit Post</div>
+        <div class="context">Campaign: NYC Rooftop • Post 3</div>
+      </div>
+
+      <div class="form">
+        <div class="block">
+          <div class="label">Content</div>
+          <div class="box">
+            <textarea spellcheck="false">A rooftop whisper: “stay a little longer.” City lights dim, first birds call, and plans for today feel miles away. 🕊️</textarea>
+            <div class="toolbar">
+              <button class="pill" title="Add Emojis" aria-label="Add emojis">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                  <path d="M8 10h.01M16 10h.01M8 14c1 1.2 2.5 2 4 2s3-.8 4-2"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="block photos-col">
+          <div>
+            <div class="label">Photos</div>
+            <div class="box">
+              <div class="files-wrap" id="photoList">
+                <div class="file-row">
+                  <span>skylight.png</span>
+                  <span class="x" data-remove-photo>×</span>
+                </div>
+              </div>
+              <div class="toolbar" style="margin-top:8px;">
+                <button class="plus-btn" id="addPhotoBtn" title="Add photo" aria-label="Add photo">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div></div>
+        </div>
+        <div class="block">
+          <div class="label">Hashtags</div>
+          <div class="box" style="display:grid;grid-template-rows:auto 1fr;gap:8px;">
+            <div class="chips" id="hashtagList">
+              <span class="chip">#NYC <span class="x" data-remove-tag>×</span></span>
+              <span class="chip">#rooftop <span class="x" data-remove-tag>×</span></span>
+              <span class="chip">#nightshoot <span class="x" data-remove-tag>×</span></span>
+            </div>
+            <div class="toolbar">
+              <button class="plus-btn" id="addHashtagBtn" title="Add hashtag" aria-label="Add hashtag">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis">
+        <div class="label-row">
+          <div class="label">Vibe Analysis</div>
+        </div>
+        <div class="box">
+          <div class="text" id="vibeText">
+            This reads 90% on-brand for the NYC rooftop series: calm, high-up, soft-city energy. To fully match other posts, keep 1–2 sensory details (“first birds”, “lights dimming”) and end with a gentle invite-to-stay line.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn" data-action="cancel-edit">Cancel</button>
+      <button class="btn primary" data-action="save-edit">Save</button>
+    </div>
+  </div>
+
+<script src="aura.js"></script>
+</body>
+</html>
