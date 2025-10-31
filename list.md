@@ -2,8 +2,11 @@
 
 ## Project Overview
 **Project Name:** AuraLab
+
 **Platform:** Web
+
 **GitHub:** [Link](https://github.com/hanxi-guo/CIS412_AuraLab)
+
 **Summary:**  
 Our application is a vibe-crafting studio designed to help influencers organize, edit, and analyze multi-post campaigns, which integrated with AI.
 
@@ -26,14 +29,14 @@ Styles include:
   - color palette: 
     - Primary: #475272
     - Secondary: #29967F
-    - Accent: #E6C584 
-![[IMG_2065.jpg]]
+    - Accent: #E6C584
+![](IMG_2065.jpg)
 - Black System:
   - color palette: 
     - Primary: #D8DAE3
     - Secondary: #19B092
     - Accent:  #fdf68c
-![[IMG_2066.jpg]]
+![](IMG_2066.jpg)
 - typeface: Inter at light, medium, and bold fonts
 - icon set: The Material 3 Design Kit and the Simple Design System set
  
@@ -64,7 +67,7 @@ When a user clicks “Generate Link,” the app will create a unique shareable U
 **Description:** 
 We will develop a campaign management dashboard that displays all posts within each campaign.
 eg.
-![[demo.png]]
+![](demo.png)
 
 ### 7. AI caption genertor without prompt in edition
 **Description:** 
