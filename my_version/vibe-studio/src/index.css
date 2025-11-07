@@ -1,0 +1,42 @@
+/* Import Tailwind CSS layers */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🌿 Paper-textured background */
+.bg-paper {
+  background: #fdf6e3 url('https://www.transparenttextures.com/patterns/paper-fibers.png');
+}
+
+/* 📄 Warmer beige card background */
+.card-bg {
+  background-color: #FCF9F3;
+}
+
+/* 💗 Pink tape */
+.tape {
+  width: 140px;
+  height: 25px;
+  background: rgba(227, 210, 169, 0.6);
+  position: absolute;
+  bottom: -12px;
+  right: 25px;
+  transform: rotate(-10deg);
+  border-radius: 5px;
+  backdrop-filter: blur(2px);
+  z-index: 5;
+}
+
+/* 📎 Paper clip */
+.clip {
+  width: 18px;
+  height: 40px;
+  border: 2px solid #888;
+  border-radius: 8px;
+  position: absolute;
+  top: -15px;
+  right: 45px;
+  background: transparent;
+  transform: rotate(5deg);
+  z-index: 5;
+}
