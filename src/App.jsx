@@ -559,7 +559,7 @@ export default function App() {
       {isLayoutOpen && (
         <div className="layout-overlay" onClick={() => setIsLayoutOpen(false)}>
           <div className="layout-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="layout-canvas">
+            <div className="layout-canvas add-new-canvas">
               <div className="layout-safe">
                 <div className="layout-panel">
                 <div className="layout-form">

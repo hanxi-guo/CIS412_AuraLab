@@ -431,13 +431,17 @@ body {
 .layout-canvas {
   width: 100vw;
   height: 90vh;
-  background: url('/assert/layout.png') center/contain no-repeat; 
+  background: url('/assert/bg3.png') center/contain no-repeat; 
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow-y: auto;   /* allow vertical scrolling */
   overflow-x: hidden; /* prevent horizontal scrolling */
+}
+
+.layout-canvas.add-new-canvas {
+  background: url('/assert/layout.png') center/contain no-repeat;
 }
 
 .layout-canvas.overview-canvas {
