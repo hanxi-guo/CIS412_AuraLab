@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello World – AuraLab Style</title>
+  <style>
+    /* ===== Import Inter Font ===== */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&display=swap');
+
+    /* ===== AuraLab Palette ===== */
+    :root {
+      --primary: #EEEBE3;     /* soft beige background */
+      --secondary: #475272;   /* dark navy text */
+      --accent: #29967F;      /* deep green header/accent */
+      --note-bg: #F7F5EF;     /* subtle paper card tone */
+      --shadow: rgba(0, 0, 0, 0.08);
+    }
+
+    body {
+      background-color: var(--primary);
+      background-image: url('https://www.transparenttextures.com/patterns/paper-fibers.png');
+      font-family: 'Inter', sans-serif;
+      color: var(--secondary);
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    h1 {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+      text-shadow: 0 1.5px 2px var(--shadow);
+    }
+
+    p {
+      font-weight: 300;
+      font-size: 1.1rem;
+      opacity: 0.9;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background-color: var(--note-bg);
+      padding: 1.5rem 2rem;
+      border-radius: 10px;
+      box-shadow: 2px 3px 5px var(--shadow);
+      text-align: left;
+      max-width: 400px;
+    }
+
+    .card strong {
+      font-weight: 700;
+      display: block;
+      margin-bottom: 0.6rem;
+      color: var(--secondary);
+    }
+
+    .card span {
+      font-weight: 500;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hello World</h1>
+  <p>Welcome to the AuraLab-styled homepage</p>
+
+  <div class="card">
+    <strong>Overview:</strong>
+    <span>Platform: Web</span>
+    <span>Voice: Warm &amp; Honest</span>
+    <span>Audience: Designers &amp; Creators</span>
+  </div>
+</body>
+</html>
