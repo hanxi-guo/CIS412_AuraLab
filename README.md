@@ -20,8 +20,6 @@ Then open the local URL shown in terminal (usually `http://localhost:5173`)
 Press `Ctrl + C` in the terminal
 
 
-That's it and happy coding! 🎉
-
 ---
 
 ## AI Usage Declaration
