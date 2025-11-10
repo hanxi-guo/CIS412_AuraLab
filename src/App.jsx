@@ -360,7 +360,7 @@ export default function App() {
     setIsPostLayoutOpen(false); /* Return to main interface */
   }
   return (
-    <div className="min-h-screen flex items-center justify-center bg-paper font-serif">
+    <div className="min-h-screen flex items-center justify-center bg-paper">
       <div className="pen-images-container">
         {!defaultPens.black.removed && (
         <div

@@ -6,6 +6,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Apply Inter font globally */
+* {
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
 /* 🌿 Paper-textured background */
 .bg-paper {
   background: url('/assert/bakcgound.png');
@@ -422,7 +431,7 @@
 .layout-canvas {
   width: 100vw;
   height: 90vh;
-  background: url('/assert/bg3.png') center/contain no-repeat; 
+  background: url('/assert/layout.png') center/contain no-repeat; 
   display: flex;
   align-items: center;
   justify-content: center;
