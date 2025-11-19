@@ -3,7 +3,6 @@ import {
   Search, 
   Plus, 
   ArrowUp, 
-  FileText, 
   Image as ImageIcon, 
   Heart, 
   MessageCircle, 
