@@ -26,6 +26,35 @@ interface PostEditorModalProps {
   existingPost?: Post | null;
 }
 
+const PLACEHOLDER_CONTENT: Record<
+  UnderlineLevel,
+  { analysis: string; suggestions: string[] }
+> = {
+  good: {
+    analysis:
+      'Nice! This sentence reads clearly and matches your overall tone well.',
+    suggestions: [],
+  },
+  ok: {
+    analysis:
+      'This sentence is okay, but it could be sharper, more specific, or more on-brand.',
+    suggestions: [
+      'Placeholder yellow suggestion 1: a slightly punchier version of this sentence.',
+      'Placeholder yellow suggestion 2: a clearer, more concise rewrite for mid-level tone.',
+      'Placeholder yellow suggestion 3: a more engaging, audience-focused version.',
+    ],
+  },
+  bad: {
+    analysis:
+      'This sentence feels off-tone, unclear, or weak. It likely needs a stronger rewrite.',
+    suggestions: [
+      'Placeholder red suggestion 1: a bold, concise alternative with a clearer message.',
+      'Placeholder red suggestion 2: a more confident and direct rewrite for this idea.',
+      'Placeholder red suggestion 3: a more audience-centric phrasing with a clear hook.',
+    ],
+  },
+};
+
 const PostEditorModal: React.FC<PostEditorModalProps> = ({
   isOpen,
   onClose,
@@ -44,7 +73,12 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   // sentence-level “analysis”
   const [hasAnalysis, setHasAnalysis] = useState(false);
   const [sentences, setSentences] = useState<AnalyzedSentence[]>([]);
-  const [hoveredSentenceId, setHoveredSentenceId] = useState<number | null>(null);
+  const [hoveredSentenceId, setHoveredSentenceId] = useState<number | null>(
+    null
+  );
+  const [selectedSentenceId, setSelectedSentenceId] = useState<number | null>(
+    null
+  );
   const idleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -60,6 +94,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       setHasAnalysis(false);
       setSentences([]);
       setHoveredSentenceId(null);
+      setSelectedSentenceId(null);
       if (idleTimerRef.current) {
         window.clearTimeout(idleTimerRef.current);
         idleTimerRef.current = null;
@@ -97,7 +132,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
       if (separators.has(ch)) {
         // look ahead to swallow consecutive separators/spaces/newlines
-        while (i + 1 < input.length && (separators.has(input[i + 1]) || input[i + 1] === ' ')) {
+        while (
+          i + 1 < input.length &&
+          (separators.has(input[i + 1]) || input[i + 1] === ' ')
+        ) {
           i++;
           current += input[i];
         }
@@ -122,13 +160,14 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     if (!trimmed) {
       setHasAnalysis(false);
       setSentences([]);
+      setSelectedSentenceId(null);
       return;
     }
 
     const rawSentences = splitIntoSentences(text);
     const levels: UnderlineLevel[] = ['good', 'ok', 'bad'];
 
-    const analyzed = rawSentences.map((s, idx) => {
+    const analyzed: AnalyzedSentence[] = rawSentences.map((s, idx) => {
       const randomLevel = levels[Math.floor(Math.random() * levels.length)];
       return {
         id: idx,
@@ -139,6 +178,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
     setSentences(analyzed);
     setHasAnalysis(true);
+    setSelectedSentenceId(null);
   };
 
   const scheduleIdleAnalysis = () => {
@@ -229,6 +269,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     setHasAnalysis(false);
     setSentences([]);
     setHoveredSentenceId(null);
+    setSelectedSentenceId(null);
     scheduleIdleAnalysis();
   };
 
@@ -253,8 +294,45 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   };
 
   const handleHighlightedClick = () => {
+    // clicking the analyzed area (but not a specific sentence) goes back to raw textarea
     setHasAnalysis(false);
     setHoveredSentenceId(null);
+    setSelectedSentenceId(null);
+  };
+
+  const handleSentenceClick = (
+    e: React.MouseEvent<HTMLSpanElement>,
+    sentenceId: number
+  ) => {
+    e.stopPropagation(); // prevent closing analysis view
+    setSelectedSentenceId(sentenceId);
+  };
+
+  const selectedSentence =
+    selectedSentenceId !== null
+      ? sentences.find((s) => s.id === selectedSentenceId) ?? null
+      : null;
+
+  const handleSuggestionClick = (suggestion: string) => {
+    if (!selectedSentence) return;
+
+    const updated: AnalyzedSentence[] = sentences.map(
+      (s): AnalyzedSentence =>
+        s.id === selectedSentence.id
+          ? {
+              ...s,
+              text: suggestion,
+              level: 'good', // after choosing a suggestion, mark as good
+            }
+          : s
+    );
+    setSentences(updated);
+
+    // sync back to main text; here we just join with a space
+    const newText = updated.map((s) => s.text).join(' ');
+    setText(newText);
+
+    setSelectedSentenceId(null);
   };
 
   return (
@@ -329,6 +407,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                             key={s.id}
                             onMouseEnter={() => setHoveredSentenceId(s.id)}
                             onMouseLeave={() => setHoveredSentenceId(null)}
+                            onClick={(e) => handleSentenceClick(e, s.id)}
                             style={{
                               textDecorationLine: 'underline',
                               textDecorationStyle: 'wavy',
@@ -337,6 +416,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                                 ? bgForLevel(s.level)
                                 : 'transparent',
                               transition: 'background-color 120ms ease-out',
+                              cursor: 'pointer',
                             }}
                           >
                             {s.text}
@@ -422,6 +502,62 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           currentImageIndex={currentImageIndex}
           setCurrentImageIndex={setCurrentImageIndex}
         />
+
+        {/* Sentence Analysis Popup */}
+        {selectedSentence && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center">
+            {/* Popup backdrop (inside the card) */}
+            <div
+              className="absolute inset-0 bg-black/20"
+              onClick={() => setSelectedSentenceId(null)}
+            />
+            <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl p-6">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Sentence feedback
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSentenceId(null)}
+                  className="p-1 rounded-full hover:bg-gray-100"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+
+              <p className="text-sm text-gray-500 mb-3">
+                “{selectedSentence.text.trim()}”
+              </p>
+
+              <p className="text-sm text-gray-800 mb-4">
+                {PLACEHOLDER_CONTENT[selectedSentence.level].analysis}
+              </p>
+
+              {PLACEHOLDER_CONTENT[selectedSentence.level].suggestions.length >
+                0 && (
+                <>
+                  <p className="text-xs font-semibold tracking-wide text-gray-500 mb-2 uppercase">
+                    Try one of these rewrites:
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {PLACEHOLDER_CONTENT[selectedSentence.level].suggestions.map(
+                      (sug, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleSuggestionClick(sug)}
+                          className="w-full text-left text-sm border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors"
+                        >
+                          {sug}
+                        </button>
+                      )
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
