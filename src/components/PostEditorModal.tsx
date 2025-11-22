@@ -1,23 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Image as ImageIcon,
-  Heart,
-  MessageCircle,
-  Send,
-  Bookmark,
-  MoreHorizontal,
-  RefreshCw,
-  X,
-} from 'lucide-react';
-import type { Post, PostDraft, TabType } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Image as ImageIcon, X } from 'lucide-react';
+import type { Post, PostDraft } from '../types';
 import {
   MAX_CAPTION_LENGTH,
   MAX_IMAGES_PER_POST,
   MAX_TITLE_LENGTH,
   THEME,
 } from '../config';
+import SocialPreview from './SocialPreview';
+import type { PreviewPlatform } from './SocialPreview';
 
-type PreviewPlatform = 'instagram' | 'facebook' | 'twitter';
+type UnderlineLevel = 'good' | 'ok' | 'bad';
+
+interface AnalyzedSentence {
+  id: number;
+  text: string;
+  level: UnderlineLevel;
+}
 
 interface PostEditorModalProps {
   isOpen: boolean;
@@ -34,14 +33,19 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   campaignName,
   existingPost,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('preview');
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('instagram');
-  const [analysisVersion, setAnalysisVersion] = useState(0);
+  const [previewPlatform, setPreviewPlatform] =
+    useState<PreviewPlatform>('instagram');
+
+  // sentence-level “analysis”
+  const [hasAnalysis, setHasAnalysis] = useState(false);
+  const [sentences, setSentences] = useState<AnalyzedSentence[]>([]);
+  const [hoveredSentenceId, setHoveredSentenceId] = useState<number | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -50,11 +54,18 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       setImagePreviewUrls(existingPost?.images ?? []);
       setFiles([]);
       setCurrentImageIndex(0);
-      setActiveTab('preview');
       setPreviewPlatform('instagram');
-      setAnalysisVersion(0);
+
+      // reset analysis state
+      setHasAnalysis(false);
+      setSentences([]);
+      setHoveredSentenceId(null);
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
     }
-  }, [isOpen, existingPost]);  
+  }, [isOpen, existingPost]);
 
   useEffect(() => {
     if (currentImageIndex >= imagePreviewUrls.length) {
@@ -62,7 +73,82 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     }
   }, [imagePreviewUrls, currentImageIndex]);
 
+  // cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, []);
+
   if (!isOpen) return null;
+
+  // --- sentence splitting + fake analysis ---
+  const splitIntoSentences = (input: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+
+    const separators = new Set(['.', '!', '?', '\n']);
+
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      current += ch;
+
+      if (separators.has(ch)) {
+        // look ahead to swallow consecutive separators/spaces/newlines
+        while (i + 1 < input.length && (separators.has(input[i + 1]) || input[i + 1] === ' ')) {
+          i++;
+          current += input[i];
+        }
+        result.push(current);
+        current = '';
+      }
+    }
+
+    if (current.trim().length > 0) {
+      result.push(current);
+    }
+
+    if (result.length === 0 && input.trim().length > 0) {
+      return [input];
+    }
+
+    return result;
+  };
+
+  const runSentenceAnalysis = () => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setHasAnalysis(false);
+      setSentences([]);
+      return;
+    }
+
+    const rawSentences = splitIntoSentences(text);
+    const levels: UnderlineLevel[] = ['good', 'ok', 'bad'];
+
+    const analyzed = rawSentences.map((s, idx) => {
+      const randomLevel = levels[Math.floor(Math.random() * levels.length)];
+      return {
+        id: idx,
+        text: s,
+        level: randomLevel,
+      };
+    });
+
+    setSentences(analyzed);
+    setHasAnalysis(true);
+  };
+
+  const scheduleIdleAnalysis = () => {
+    if (idleTimerRef.current) {
+      window.clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = window.setTimeout(() => {
+      runSentenceAnalysis();
+    }, 10000); // 10 seconds
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -78,7 +164,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const selectedFiles = Array.from(fileList).slice(0, remaining);
 
     if (selectedFiles.length < fileList.length) {
-      alert(`Only the first ${remaining} images were added (limit is ${MAX_IMAGES_PER_POST}).`);
+      alert(
+        `Only the first ${remaining} images were added (limit is ${MAX_IMAGES_PER_POST}).`
+      );
     }
 
     const newUrls: string[] = [];
@@ -107,7 +195,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const trimmedTitle = title.trim();
     const trimmedText = text.trim();
 
-    // Basic validation: avoid empty posts
     if (!trimmedTitle && !trimmedText && imagePreviewUrls.length === 0) {
       alert('Please add a title, caption, or at least one image before saving.');
       return;
@@ -137,21 +224,53 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       alert(`Caption cannot exceed ${MAX_CAPTION_LENGTH} characters.`);
     }
     setText(value.slice(0, MAX_CAPTION_LENGTH));
+
+    // user is typing → clear existing analysis and schedule a new one
+    setHasAnalysis(false);
+    setSentences([]);
+    setHoveredSentenceId(null);
+    scheduleIdleAnalysis();
+  };
+
+  const handleCaptionBlur = () => {
+    if (idleTimerRef.current) {
+      window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+    runSentenceAnalysis();
+  };
+
+  const colorForLevel = (level: UnderlineLevel): string => {
+    if (level === 'good') return '#16a34a';
+    if (level === 'ok') return '#f59e0b';
+    return '#dc2626';
+  };
+
+  const bgForLevel = (level: UnderlineLevel): string => {
+    if (level === 'good') return 'rgba(22, 163, 74, 0.12)';
+    if (level === 'ok') return 'rgba(245, 158, 11, 0.15)';
+    return 'rgba(220, 38, 38, 0.12)';
+  };
+
+  const handleHighlightedClick = () => {
+    setHasAnalysis(false);
+    setHoveredSentenceId(null);
   };
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/20 backdrop-blur-sm"
         onClick={onClose}
       ></div>
 
       {/* Modal Content */}
-      <div className={`${THEME.card} w-full max-w-6xl h-[85vh] rounded-[2rem] shadow-2xl flex overflow-hidden relative`}>
-        
+      <div
+        className={`${THEME.card} w-full max-w-6xl h-[85vh] rounded-[2rem] shadow-2xl flex overflow-hidden relative`}
+      >
         {/* Close Button */}
-        <button 
+        <button
           onClick={onClose}
           className="absolute top-6 right-6 z-10 p-2 rounded-full hover:bg-black/5 transition-colors"
         >
@@ -166,43 +285,12 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           <h2 className={`text-3xl font-semibold ${THEME.textMain} mb-8`}>
             {campaignName}
           </h2>
-        {/* Preview platform selector */}
-        <div className="mb-4">
-        <span className="block text-xs font-semibold tracking-wide uppercase text-[#8C857B] mb-2">
-            Preview as
-        </span>
-        <div className="inline-flex rounded-full bg-[#EBE7DE] p-1 gap-1">
-            {(['instagram', 'facebook', 'twitter'] as PreviewPlatform[]).map((platform) => {
-            const label =
-                platform === 'instagram'
-                ? 'Instagram'
-                : platform === 'facebook'
-                ? 'Facebook'
-                : 'Twitter';
-            const isActive = previewPlatform === platform;
-            return (
-                <button
-                key={platform}
-                type="button"
-                onClick={() => setPreviewPlatform(platform)}
-                className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                    isActive
-                    ? 'bg-[#8C857B] text-white shadow-sm'
-                    : 'text-[#6B6359] hover:text-[#4A4238]'
-                }`}
-                >
-                {label}
-                </button>
-            );
-            })}
-        </div>
-        </div>
 
           {/* Title Input */}
           <div className="mb-2">
-            <input 
-              type="text" 
-              placeholder="Title" 
+            <input
+              type="text"
+              placeholder="Title"
               value={title}
               onChange={handleTitleChange}
               className={`w-full text-2xl font-medium bg-transparent border-2 ${THEME.border} rounded-xl px-4 py-3 focus:outline-none focus:border-[#C27A70] placeholder-[#A39D93]`}
@@ -212,15 +300,52 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
             </div>
           </div>
 
-          {/* Text Area */}
+          {/* Text Area + Highlighted Sentences */}
           <div className="flex-1 mb-6 min-h-[200px]">
-            <div className={`w-full h-full border-2 ${THEME.border} rounded-2xl p-4 bg-white`}>
-              <textarea 
-                placeholder="Text" 
-                value={text}
-                onChange={handleTextChange}
-                className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93]"
-              ></textarea>
+            <div
+              className={`relative w-full h-full border-2 ${THEME.border} rounded-2xl bg-white`}
+            >
+              {!hasAnalysis && (
+                <textarea
+                  placeholder="Text"
+                  value={text}
+                  onChange={handleTextChange}
+                  onBlur={handleCaptionBlur}
+                  className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93] px-4 py-4"
+                ></textarea>
+              )}
+
+              {hasAnalysis && (
+                <div
+                  className="absolute inset-0 px-4 py-4 text-lg whitespace-pre-wrap overflow-auto cursor-text"
+                  onClick={handleHighlightedClick}
+                >
+                  {sentences.length > 0
+                    ? sentences.map((s) => {
+                        const underlineColor = colorForLevel(s.level);
+                        const isHovered = hoveredSentenceId === s.id;
+                        return (
+                          <span
+                            key={s.id}
+                            onMouseEnter={() => setHoveredSentenceId(s.id)}
+                            onMouseLeave={() => setHoveredSentenceId(null)}
+                            style={{
+                              textDecorationLine: 'underline',
+                              textDecorationStyle: 'wavy',
+                              textDecorationColor: underlineColor,
+                              backgroundColor: isHovered
+                                ? bgForLevel(s.level)
+                                : 'transparent',
+                              transition: 'background-color 120ms ease-out',
+                            }}
+                          >
+                            {s.text}
+                          </span>
+                        );
+                      })
+                    : text}
+                </div>
+              )}
             </div>
             <div className="mt-1 text-xs text-right text-[#8C857B]">
               {text.length}/{MAX_CAPTION_LENGTH}
@@ -229,7 +354,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
           {/* Media Attachments */}
           <div className="h-48">
-            <div className={`w-full h-full border-2 ${THEME.border} rounded-2xl p-4 bg-white flex flex-col`}>
+            <div
+              className={`w-full h-full border-2 ${THEME.border} rounded-2xl p-4 bg-white flex flex-col`}
+            >
               <span className="text-[#A39D93] mb-2 block">Media attachments</span>
               <label className="flex-1 border-2 border-dashed border-[#E6E1D6] rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors">
                 <ImageIcon className="w-8 h-8 text-[#D1CBC1] mx-auto mb-2" />
@@ -247,11 +374,13 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 />
               </label>
 
-              {/* Small thumbnail strip for removing images */}
               {imagePreviewUrls.length > 0 && (
                 <div className="mt-3 flex gap-2 overflow-x-auto">
                   {imagePreviewUrls.map((url, idx) => (
-                    <div key={idx} className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0">
+                    <div
+                      key={idx}
+                      className="relative w-12 h-12 rounded-md overflow-hidden flex-shrink-0"
+                    >
                       <img
                         src={url}
                         alt={`preview-${idx}`}
@@ -284,328 +413,15 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           </div>
         </form>
 
-        {/* Right Panel: Preview / Analysis */}
-        <div className={`w-1/2 p-10 ${THEME.sidebar} flex flex-col`}>
-          
-          {/* Toggle Switch */}
-          <div className="flex justify-center mb-8">
-            <div className="bg-[#EBE7DE] p-1 rounded-full flex shadow-inner">
-              <button 
-                type="button"
-                onClick={() => setActiveTab('preview')}
-                className={`px-8 py-2 rounded-full text-sm font-medium transition-all ${
-                  activeTab === 'preview'
-                    ? 'bg-[#8C857B] text-white shadow-sm'
-                    : 'text-[#8C857B] hover:text-[#4A4238]'
-                }`}
-              >
-                Preview
-              </button>
-              <button 
-                type="button"
-                onClick={() => setActiveTab('analysis')}
-                className={`px-8 py-2 rounded-full text-sm font-medium transition-all ${
-                  activeTab === 'analysis'
-                    ? 'bg-[#8C857B] text-white shadow-sm'
-                    : 'text-[#8C857B] hover:text-[#4A4238]'
-                }`}
-              >
-                Analysis
-              </button>
-            </div>
-          </div>
-
-          {/* Content Area */}
-          <div className="flex-1 overflow-y-auto">
-          {activeTab === 'preview' ? (
-            // PREVIEW TAB
-            <div className="max-w-md mx-auto">
-                {previewPlatform === 'instagram' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    {/* IG header */}
-                    <div className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#D1CBC1] flex items-center justify-center text-[11px] font-semibold text-white">
-                        Y
-                        </div>
-                        <span className="text-sm font-semibold">you</span>
-                    </div>
-                    <MoreHorizontal className="w-5 h-5 text-gray-600" />
-                    </div>
-
-                    {/* IG carousel */}
-                    <div className="relative aspect-square bg-gray-100">
-                    {imagePreviewUrls.length > 0 ? (
-                        <>
-                        <img
-                            src={imagePreviewUrls[currentImageIndex]}
-                            alt={`preview-${currentImageIndex}`}
-                            className="w-full h-full object-cover"
-                        />
-                        {imagePreviewUrls.length > 1 && (
-                            <>
-                            <button
-                                type="button"
-                                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === 0 ? imagePreviewUrls.length - 1 : prev - 1
-                                )
-                                }
-                            >
-                                ‹
-                            </button>
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === imagePreviewUrls.length - 1 ? 0 : prev + 1
-                                )
-                                }
-                            >
-                                ›
-                            </button>
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                                {imagePreviewUrls.map((_, idx) => (
-                                <span
-                                    key={idx}
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                    idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
-                                    }`}
-                                ></span>
-                                ))}
-                            </div>
-                            </>
-                        )}
-                        </>
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 px-4 text-center">
-                        No image selected — upload images on the left to see them here.
-                        </div>
-                    )}
-                    </div>
-
-                    {/* IG actions & caption */}
-                    <div className="p-3">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex gap-4">
-                        <Heart className="w-6 h-6 text-gray-800" />
-                        <MessageCircle className="w-6 h-6 text-gray-800" />
-                        <Send className="w-6 h-6 text-gray-800" />
-                        </div>
-                        <Bookmark className="w-6 h-6 text-gray-800" />
-                    </div>
-
-                    <div className="text-sm font-semibold mb-1">0 likes</div>
-                    <div className="text-sm break-words whitespace-pre-wrap max-h-32 overflow-y-auto pr-1">
-                        <span className="font-semibold mr-2">you</span>
-                        {text || <span className="text-gray-400">Caption will appear here…</span>}
-                    </div>
-                    </div>
-                </div>
-                )}
-
-                {previewPlatform === 'facebook' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    {/* FB header */}
-                    <div className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#D1CBC1] flex items-center justify-center text-[11px] font-semibold text-white">
-                        Y
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-semibold">You</span>
-                        <span className="text-[11px] text-gray-400">Just now · Public</span>
-                    </div>
-                    </div>
-
-                    {/* FB text */}
-                    <div className="px-3 pb-3 text-sm whitespace-pre-wrap break-words">
-                    {text || <span className="text-gray-400">Write something for your post…</span>}
-                    </div>
-
-                    {/* FB image(s) */}
-                    <div className="relative bg-gray-100 max-h-80 overflow-hidden flex items-center justify-center">
-                    {imagePreviewUrls.length > 0 ? (
-                        <>
-                        <img
-                            src={imagePreviewUrls[currentImageIndex]}
-                            alt={`facebook-preview-${currentImageIndex}`}
-                            className="w-full h-full object-cover"
-                        />
-
-                        {imagePreviewUrls.length > 1 && (
-                            <>
-                            {/* Left/Right controls */}
-                            <button
-                                type="button"
-                                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === 0 ? imagePreviewUrls.length - 1 : prev - 1
-                                )
-                                }
-                            >
-                                ‹
-                            </button>
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === imagePreviewUrls.length - 1 ? 0 : prev + 1
-                                )
-                                }
-                            >
-                                ›
-                            </button>
-
-                            {/* Dots */}
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                                {imagePreviewUrls.map((_, idx) => (
-                                <span
-                                    key={idx}
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                    idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
-                                    }`}
-                                ></span>
-                                ))}
-                            </div>
-                            </>
-                        )}
-                        </>
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 px-4 text-center">
-                        No image selected — upload images on the left to see them here.
-                        </div>
-                    )}
-                    </div>
-
-                </div>
-                )}
-
-                {previewPlatform === 'twitter' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-[#E6E1D6]">
-                    {/* Twitter header */}
-                    <div className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#D1CBC1] flex items-center justify-center text-[11px] font-semibold text-white">
-                        Y
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-semibold">you</span>
-                        <span className="text-[11px] text-gray-400">@yourhandle · now</span>
-                    </div>
-                    </div>
-
-                    {/* Tweet text */}
-                    <div className="px-3 pb-3 text-sm whitespace-pre-wrap break-words">
-                    {text || (
-                        <span className="text-gray-400">
-                        Your tweet copy will appear here…
-                        </span>
-                    )}
-                    </div>
-
-                    {/* Tweet image(s) */}
-                    <div className="relative bg-gray-100 max-h-80 overflow-hidden flex items-center justify-center">
-                    {imagePreviewUrls.length > 0 ? (
-                        <>
-                        <img
-                            src={imagePreviewUrls[currentImageIndex]}
-                            alt={`twitter-preview-${currentImageIndex}`}
-                            className="w-full h-full object-cover"
-                        />
-
-                        {imagePreviewUrls.length > 1 && (
-                            <>
-                            {/* Left/Right controls */}
-                            <button
-                                type="button"
-                                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === 0 ? imagePreviewUrls.length - 1 : prev - 1
-                                )
-                                }
-                            >
-                                ‹
-                            </button>
-                            <button
-                                type="button"
-                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs"
-                                onClick={() =>
-                                setCurrentImageIndex((prev) =>
-                                    prev === imagePreviewUrls.length - 1 ? 0 : prev + 1
-                                )
-                                }
-                            >
-                                ›
-                            </button>
-
-                            {/* Dots */}
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                                {imagePreviewUrls.map((_, idx) => (
-                                <span
-                                    key={idx}
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                    idx === currentImageIndex ? 'bg-white' : 'bg-white/40'
-                                    }`}
-                                ></span>
-                                ))}
-                            </div>
-                            </>
-                        )}
-                        </>
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 px-4 text-center">
-                        No image selected — upload images on the left to see them here.
-                        </div>
-                    )}
-                    </div>
-                </div>
-                )}
-            </div>
-            ) : (
-            // ANALYSIS TAB
-            <div className="bg-[#EBE7DE] rounded-2xl p-8 shadow-sm h-full">
-                <div className="flex items-center justify-between mb-4">
-                <p className="text-[#4A4238] font-medium text-lg">
-                    Caption analysis (placeholder)
-                </p>
-                <button
-                    type="button"
-                    onClick={() => setAnalysisVersion((v) => v + 1)}
-                    className="p-2 rounded-full hover:bg-black/5 text-[#6B6359]"
-                    aria-label="Refresh analysis"
-                >
-                    <RefreshCw className="w-4 h-4" />
-                </button>
-                </div>
-
-                <ol className="list-decimal list-inside space-y-4 text-[#6B6359] text-sm">
-                <li className="pl-2">
-                    Opening line is clear and positive. Consider adding one more concrete detail to
-                    make the scene more vivid.
-                </li>
-                <li className="pl-2">
-                    Tone is friendly and descriptive. Try a short call-to-action for higher
-                    engagement (e.g., “Which view would you hang above your desk?”).
-                </li>
-                <li className="pl-2">
-                    Length is within a comfortable range for mobile reading. Hashtags and emojis can
-                    be added later per channel guidelines.
-                </li>
-                </ol>
-
-                <p className="mt-6 text-[11px] text-[#8C857B]">
-                Analysis version #{analysisVersion + 1} · In a real system this would refresh based
-                on your latest caption and media.
-                </p>
-            </div>
-            )}
-          </div>
-
-        </div>
+        {/* Right Panel: Platform Preview (split out) */}
+        <SocialPreview
+          previewPlatform={previewPlatform}
+          onChangePlatform={setPreviewPlatform}
+          text={text}
+          imagePreviewUrls={imagePreviewUrls}
+          currentImageIndex={currentImageIndex}
+          setCurrentImageIndex={setCurrentImageIndex}
+        />
       </div>
     </div>
   );

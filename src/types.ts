@@ -35,11 +35,17 @@ export interface Post {
   
   export type TabType = 'preview' | 'analysis';
   
+  export interface CampaignBrief {
+    overview: string;        // High-level description / objective
+    targetAudience: string;  // Who we’re talking to
+    brandVoice: string[];    // Tag-style labels: “warm”, “intimate”, etc.
+    guardrails: string;      // Do’s / don’ts, constraints
+  }
+  
   export interface Campaign {
     id: string;
     name: string;
     posts: Post[];
-    references: ReferenceFile[];
-    brief?: string;
+    brief: CampaignBrief;
   }
   

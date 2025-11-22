@@ -6,7 +6,7 @@ export const MAX_TITLE_LENGTH = 40;
 export const MAX_CAPTION_LENGTH = 500;
 export const MAX_BRIEF_LENGTH = 800;
 export const MAX_IMAGES_PER_POST = 10;
-export const MAX_REFERENCES_PER_CAMPAIGN = 5;
+export const MAX_BRAND_VOICE_TAGS = 8;
 
 export const THEME: ThemeConfig = {
   bg: 'bg-[#EBE7DE]',
@@ -21,36 +21,41 @@ export const THEME: ThemeConfig = {
 };
 
 export const INITIAL_CAMPAIGNS: Campaign[] = [
-  {
-  id: 'scenery',
-  name: 'Scenery Campaign',
-  posts: [
     {
-      id: 1,
-      title: 'Golden hour by the bay',
-      caption:
-        'Soft waves, warm light, and hand-painted details that make this seaside print feel like a memory.',
-      images: [
-        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1000&q=80',
-      ],
+      id: 'scenery',
+      name: 'Scenery Campaign',
+      posts: [],
+      brief: {
+        overview:
+          'Launch a limited series of hand-painted seaside canvases that feel like a quiet, golden-hour escape from the city.',
+        targetAudience:
+          'Young professionals and creatives (25–40) living in coastal or major urban areas who want calming, artful pieces for their apartments or home offices.',
+        brandVoice: ['warm', 'intimate', 'artisanal', 'tranquil'],
+        guardrails:
+          'Do not mention prices or discounts • Avoid sounding mass-produced or generic • No overly salesy language—focus on feeling and mood • Keep captions positive and hopeful.',
+      },
     },
-  ],
-  references: [],
-  brief:
-    'This campaign markets a series of seaside scenery paintings. Highlight the beauty of the artwork and the hand-made quality. Do not mention price in any posts.',
-  },
-  {
-    id: 'shoe',
-    name: 'Shoe Campaign',
-    posts: [],
-    references: [],
-    brief: '',
-  },
-  {
-    id: 'personal',
-    name: 'Personal Posts',
-    posts: [],
-    references: [],
-    brief: '',
-  },
-];
+    {
+      id: 'shoe',
+      name: 'Shoe Campaign',
+      posts: [],
+      brief: {
+        overview: '',
+        targetAudience: '',
+        brandVoice: [],
+        guardrails: '',
+      },
+    },
+    {
+      id: 'personal',
+      name: 'Personal Posts',
+      posts: [],
+      brief: {
+        overview: '',
+        targetAudience: '',
+        brandVoice: [],
+        guardrails: '',
+      },
+    },
+  ];
+  

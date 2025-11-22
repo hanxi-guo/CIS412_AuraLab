@@ -1,13 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
 import {
   INITIAL_CAMPAIGNS,
   MAX_BRIEF_LENGTH,
   MAX_CAMPAIGN_NAME_LENGTH,
-  MAX_REFERENCES_PER_CAMPAIGN,
+  MAX_BRAND_VOICE_TAGS,
   THEME,
 } from './config';
-import type { Campaign, Post, PostDraft, ReferenceFile } from './types';
+import type { Campaign, Post, PostDraft } from './types';
 import Sidebar from './components/Sidebar';
 import PostEditorModal from './components/PostEditorModal';
 import ConfirmModal from './components/ConfirmModal';
@@ -15,21 +15,29 @@ import NewCampaignModal from './components/NewCampaignModal';
 
 const App: React.FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(INITIAL_CAMPAIGNS[0].id);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
+    INITIAL_CAMPAIGNS[0]?.id ?? ''
+  );
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isNewCampaignModalOpen, setIsNewCampaignModalOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const [campaignPendingDelete, setCampaignPendingDelete] = useState<Campaign | null>(null);
+  const [campaignPendingDelete, setCampaignPendingDelete] = useState<Campaign | null>(
+    null
+  );
   const [postPendingDelete, setPostPendingDelete] = useState<Post | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [brandVoiceInput, setBrandVoiceInput] = useState<string>('');
 
   const filteredCampaigns = campaigns.filter((c) =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
+
+  useEffect(() => {
+    // Clear brand voice input when switching campaigns
+    setBrandVoiceInput('');
+  }, [selectedCampaignId]);
 
   // --- Handlers for posts ---
 
@@ -118,8 +126,12 @@ const App: React.FC = () => {
       id: newId,
       name: safeName,
       posts: [],
-      references: [],
-      brief: '',
+      brief: {
+        overview: '',
+        targetAudience: '',
+        brandVoice: [],
+        guardrails: '',
+      },
     };
 
     setCampaigns((prev) => [...prev, newCampaign]);
@@ -137,16 +149,81 @@ const App: React.FC = () => {
     );
   };
 
-  const handleUpdateCampaignBrief = (id: string, value: string) => {
+  const handleUpdateCampaignBriefField = (
+    id: string,
+    field: keyof Campaign['brief'],
+    value: string
+  ) => {
     if (value.length > MAX_BRIEF_LENGTH) {
-      alert(`Campaign brief cannot exceed ${MAX_BRIEF_LENGTH} characters.`);
+      alert(`This field cannot exceed ${MAX_BRIEF_LENGTH} characters.`);
     }
     const safe = value.slice(0, MAX_BRIEF_LENGTH);
 
     setCampaigns((prev) =>
       prev.map((c) =>
         c.id === id
-          ? { ...c, brief: safe }
+          ? {
+              ...c,
+              brief: {
+                ...c.brief,
+                [field]: safe,
+              },
+            }
+          : c
+      )
+    );
+  };
+
+  const handleAddBrandVoiceTag = () => {
+    if (!selectedCampaign) return;
+
+    const raw = brandVoiceInput.trim();
+    if (!raw) return;
+
+    const existingTags = selectedCampaign.brief.brandVoice;
+    if (existingTags.length >= MAX_BRAND_VOICE_TAGS) {
+      alert(`You can add up to ${MAX_BRAND_VOICE_TAGS} brand-voice tags.`);
+      return;
+    }
+
+    const exists = existingTags.some(
+      (tag) => tag.toLowerCase() === raw.toLowerCase()
+    );
+    if (exists) {
+      alert('This brand-voice tag is already added.');
+      return;
+    }
+
+    setCampaigns((prev) =>
+      prev.map((c) =>
+        c.id === selectedCampaign.id
+          ? {
+              ...c,
+              brief: {
+                ...c.brief,
+                brandVoice: [...c.brief.brandVoice, raw],
+              },
+            }
+          : c
+      )
+    );
+
+    setBrandVoiceInput('');
+  };
+
+  const handleRemoveBrandVoiceTag = (tagToRemove: string) => {
+    if (!selectedCampaign) return;
+
+    setCampaigns((prev) =>
+      prev.map((c) =>
+        c.id === selectedCampaign.id
+          ? {
+              ...c,
+              brief: {
+                ...c.brief,
+                brandVoice: c.brief.brandVoice.filter((tag) => tag !== tagToRemove),
+              },
+            }
           : c
       )
     );
@@ -160,11 +237,11 @@ const App: React.FC = () => {
 
   const confirmDeleteCampaign = () => {
     if (!campaignPendingDelete) return;
-  
+
     const id = campaignPendingDelete.id;
-  
+
     setCampaigns((prev) => prev.filter((c) => c.id !== id));
-  
+
     if (selectedCampaignId === id) {
       const remaining = campaigns.filter((c) => c.id !== id);
       if (remaining.length > 0) {
@@ -174,56 +251,18 @@ const App: React.FC = () => {
         setSelectedCampaignId('');
       }
     }
-  
+
     setCampaignPendingDelete(null);
-  };  
-
-  // --- References / files ---
-
-  const handleAddReferences = (fileList: FileList | null) => {
-    if (!fileList || !selectedCampaign) return;
-
-    const existingCount = selectedCampaign.references.length;
-    if (existingCount >= MAX_REFERENCES_PER_CAMPAIGN) {
-      alert(`You can attach up to ${MAX_REFERENCES_PER_CAMPAIGN} reference files per campaign.`);
-      return;
-    }
-
-    const remaining = MAX_REFERENCES_PER_CAMPAIGN - existingCount;
-    const files = Array.from(fileList).slice(0, remaining);
-
-    if (files.length < fileList.length) {
-      alert(
-        `Only the first ${remaining} files were added (limit is ${MAX_REFERENCES_PER_CAMPAIGN}).`
-      );
-    }
-
-    const newRefs: ReferenceFile[] = files.map((file, idx) => ({
-      id: `${Date.now().toString(36)}-${idx}`,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    }));
-
-    setCampaigns((prev) =>
-      prev.map((c) =>
-        c.id === selectedCampaignId
-          ? { ...c, references: [...c.references, ...newRefs] }
-          : c
-      )
-    );
-
-    // later: upload actual File objects to backend here
   };
 
+  // --- Derived data ---
+
   const postsForSelected = selectedCampaign?.posts ?? [];
-  const referenceCount = selectedCampaign?.references.length ?? 0;
-  const briefValue = selectedCampaign?.brief ?? '';
+  const brief = selectedCampaign?.brief;
 
   return (
     <div className={`flex w-full h-screen ${THEME.bg} font-sans overflow-hidden`}>
-      
-      <Sidebar 
+      <Sidebar
         campaigns={campaigns}
         filteredCampaigns={filteredCampaigns}
         selectedCampaignId={selectedCampaignId}
@@ -237,7 +276,7 @@ const App: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen relative">
-        {selectedCampaign ? (
+        {selectedCampaign && brief ? (
           <>
             <div className="flex-1 overflow-y-auto p-8 pb-32">
               {/* Header */}
@@ -248,52 +287,143 @@ const App: React.FC = () => {
                 >
                   {selectedCampaign?.name ?? 'Campaign'}
                 </h1>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-[#C9C2B5] text-[#6B6359] hover:bg-[#E6E2D8] transition-colors text-sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    Add References
-                    {referenceCount > 0 && (
-                      <span className="ml-1 px-2 py-0.5 rounded-full bg-[#E6E2D8] text-[11px] text-[#6B6359]">
-                        {referenceCount} file{referenceCount > 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </button>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      handleAddReferences(e.target.files);
-                      e.target.value = '';
-                    }}
-                  />
-                </div>
               </div>
 
-              {/* Brief / Description Box */}
+              {/* Structured Campaign Brief */}
               <div
-                className={`w-full border border-[#5A5248] rounded-3xl p-6 mb-8 ${THEME.card} text-[#4A4238]`}
+                className={`w-full border border-[#5A5248] rounded-2xl p-3 mb-4 ${THEME.card} text-[#4A4238]`}
               >
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold tracking-wide uppercase text-[#8C857B]">
-                    Campaign Brief
-                  </label>
-                  <textarea
-                    value={briefValue}
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <div>
+                      <h2 className="text-sm font-semibold tracking-wide uppercase text-[#8C857B]">
+                        Campaign Brief
+                      </h2>
+                    </div>
+                  </div>
+
+                  {/* Overview */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                      Overview / Objective
+                    </label>
+                    <textarea
+                    value={brief.overview}
                     onChange={(e) =>
-                      handleUpdateCampaignBrief(selectedCampaign.id, e.target.value)
+                      handleUpdateCampaignBriefField(
+                        selectedCampaign.id,
+                        'overview',
+                        e.target.value
+                      )
                     }
-                    placeholder="Click here to add a brief for this campaign: goals, key messages, and any constraints (e.g., no pricing, tone, hashtags)."
-                    className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[80px] max-h-40 overflow-y-auto placeholder:text-[#A39D93]"
+                    placeholder="What is this campaign trying to achieve? (e.g., launch a new collection, drive newsletter signups, build awareness, etc.)"
+                    className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[60px] max-h-28 overflow-y-auto placeholder:text-[#A39D93]"
                   />
-                  <div className="text-xs text-right text-[#8C857B]">
-                    {briefValue.length}/{MAX_BRIEF_LENGTH}
+                    <div className="text-[11px] text-right text-[#8C857B]">
+                      {brief.overview.length}/{MAX_BRIEF_LENGTH}
+                    </div>
+                  </div>
+
+                  {/* Target Audience */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                      Target Audience
+                    </label>
+                    <textarea
+                    value={brief.targetAudience}
+                    onChange={(e) =>
+                      handleUpdateCampaignBriefField(
+                        selectedCampaign.id,
+                        'targetAudience',
+                        e.target.value
+                      )
+                    }
+                    placeholder="Who are we talking to? Include age range, lifestyle, motivations, and what problem we solve for them."
+                    className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[56px] max-h-32 overflow-y-auto placeholder:text-[#A39D93]"
+                  />
+                    <div className="text-[11px] text-right text-[#8C857B]">
+                      {brief.targetAudience.length}/{MAX_BRIEF_LENGTH}
+                    </div>
+                  </div>
+
+                  {/* Brand Voice (tags) */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                      Brand Voice (Tags)
+                    </label>
+
+                    <div className="flex flex-wrap gap-2">
+                      {brief.brandVoice.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => handleRemoveBrandVoiceTag(tag)}
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#DED9CD] text-[11px] text-[#4A4238] hover:bg-[#CFC8BA] transition-colors"
+                        >
+                          <span>{tag}</span>
+                          <span className="text-[10px] text-[#6B6359]">×</span>
+                        </button>
+                      ))}
+                      {brief.brandVoice.length === 0 && (
+                        <span className="text-[11px] text-[#A39D93] italic">
+                          No tags yet — start by adding a few tone keywords.
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-2 max-w-md">
+                      <input
+                        type="text"
+                        value={brandVoiceInput}
+                        onChange={(e) => setBrandVoiceInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddBrandVoiceTag();
+                          }
+                        }}
+                        placeholder="e.g. warm, aspirational, playful"
+                        className="flex-1 bg-white/80 border border-[#D1CBC1] rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#C27A70]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddBrandVoiceTag}
+                        className={`px-3 py-2 rounded-full text-xs font-medium text-white ${
+                          brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS
+                            ? 'bg-[#CFC8BA] cursor-not-allowed'
+                            : 'bg-[#C27A70] hover:bg-[#A6655C]'
+                        }`}
+                        disabled={brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS}
+                      >
+                        + Add
+                      </button>
+                    </div>
+
+                    <div className="text-[10px] text-[#8C857B]">
+                      {brief.brandVoice.length}/{MAX_BRAND_VOICE_TAGS} tags
+                    </div>
+                  </div>
+
+                  {/* Guardrails / Do & Don't */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                      Guardrails (Do / Don&apos;t)
+                    </label>
+                    <textarea
+                      value={brief.guardrails}
+                      onChange={(e) =>
+                        handleUpdateCampaignBriefField(
+                          selectedCampaign.id,
+                          'guardrails',
+                          e.target.value
+                        )
+                      }
+                      placeholder="Any hard rules? (e.g., no pricing, avoid slang, always credit the artist, specific hashtags to use or avoid.)"
+                      className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[56px] max-h-32 overflow-y-auto placeholder:text-[#A39D93]"
+                    />
+                    <div className="text-[11px] text-right text-[#8C857B]">
+                      {brief.guardrails.length}/{MAX_BRIEF_LENGTH}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -314,7 +444,7 @@ const App: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleDeletePost(post.id)}
-                          className="p-1 rounded-full bg-white/90 hover:bg-white shadow-sm border border-[#E6E1D6]"
+                          className="p-1 rounded-full bg-white/90 hover:bg:white shadow-sm border border-[#E6E1D6]"
                           aria-label={`Delete ${post.title}`}
                         >
                           <X className="w-3 h-3 text-[#8C857B]" />
@@ -346,7 +476,9 @@ const App: React.FC = () => {
                               className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
-                            <span className="text-xs text-gray-400">No image attached</span>
+                            <span className="text-xs text-gray-400">
+                              No image attached
+                            </span>
                           )}
                         </div>
                         <h3
