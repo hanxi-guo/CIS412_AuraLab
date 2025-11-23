@@ -5,7 +5,15 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from sqlmodel import Session, delete, select
 
-from ..models import AnalysisSpan, AnalysisSuggestion, Campaign, Post, PostAnalysis, PostMedia
+from ..models import (
+    AnalysisSpan,
+    AnalysisSuggestion,
+    Campaign,
+    CampaignBrandVoice,
+    Post,
+    PostAnalysis,
+    PostMedia,
+)
 from ..schemas import AnalysisOut, AnalysisSpan as AnalysisSpanSchema, AnalysisSuggestion as AnalysisSuggestionSchema
 from .ai_adapter import generate_feedback
 from .queue import job_queue
@@ -15,6 +23,11 @@ def snapshot_post(session: Session, post: Post) -> dict:
     campaign: Optional[Campaign] = session.get(Campaign, post.campaign_id)
     media_rows: Sequence[PostMedia] = list(
         session.exec(select(PostMedia).where(PostMedia.post_id == post.id))
+    )
+    brand_voice = list(
+        session.exec(
+            select(CampaignBrandVoice.tag).where(CampaignBrandVoice.campaign_id == post.campaign_id)
+        )
     )
     return {
         "post_id": post.id,
@@ -30,6 +43,7 @@ def snapshot_post(session: Session, post: Post) -> dict:
             "overview": campaign.brief_overview if campaign else "",
             "target_audience": campaign.brief_target_audience if campaign else "",
             "guardrails": campaign.brief_guardrails if campaign else "",
+            "brand_voice": brand_voice,
         },
     }
 

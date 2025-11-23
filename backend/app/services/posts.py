@@ -6,7 +6,7 @@ from typing import List, Optional, Sequence
 from sqlmodel import Session, delete, select
 
 from ..config import MEDIA_MAX_PER_POST
-from ..models import Post, PostMedia
+from ..models import AnalysisSpan, AnalysisSuggestion, Post, PostAnalysis, PostMedia
 from ..schemas import Media, MediaCreate, PostCreate, PostOut, PostUpdate
 from .storage import delete_files
 
@@ -104,6 +104,37 @@ def delete_post(session: Session, post: Post) -> None:
     )
     delete_files([m.url for m in media_rows])
     session.exec(delete(PostMedia).where(PostMedia.post_id == post.id))  # type: ignore[arg-type]
+
+    # delete analyses and related spans/suggestions
+    analysis_ids = [
+        a_id
+        for a_id in session.exec(
+            select(PostAnalysis.id).where(PostAnalysis.post_id == post.id)
+        )
+    ]
+    if analysis_ids:
+        span_ids = [
+            s_id
+            for s_id in session.exec(
+                select(AnalysisSpan.id).where(
+                    AnalysisSpan.analysis_id.in_(analysis_ids)  # type: ignore[arg-type]
+                )
+            )
+        ]
+        if span_ids:
+            stmt_suggestions = delete(AnalysisSuggestion).where(
+                AnalysisSuggestion.span_id.in_(span_ids)  # type: ignore[arg-type]
+            )
+            session.exec(stmt_suggestions)  # type: ignore[arg-type]
+            stmt_spans = delete(AnalysisSpan).where(
+                AnalysisSpan.id.in_(span_ids)  # type: ignore[arg-type]
+            )
+            session.exec(stmt_spans)  # type: ignore[arg-type]
+        stmt_analysis = delete(PostAnalysis).where(
+            PostAnalysis.id.in_(analysis_ids)  # type: ignore[arg-type]
+        )
+        session.exec(stmt_analysis)  # type: ignore[arg-type]
+
     session.delete(post)
     session.commit()
 
