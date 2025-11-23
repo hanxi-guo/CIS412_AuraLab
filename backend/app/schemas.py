@@ -1,5 +1,5 @@
 """Pydantic schemas for campaign/post CRUD shapes."""
-# pylint: disable=no-self-argument
+# pylint: disable=no-self-argument, duplicate-code
 from datetime import datetime
 from typing import List, Optional
 
@@ -142,3 +142,34 @@ class PostOut(BaseModel):
     published_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+
+class AnalysisSuggestion(BaseModel):
+    """Suggestion for a span."""
+    id: str
+    text: str
+    rationale: Optional[str] = None
+    confidence: Optional[float] = None
+    style: Optional[str] = None
+
+
+class AnalysisSpan(BaseModel):
+    """Highlighted span with suggestions."""
+    id: str
+    text: str
+    severity: str
+    message: str
+    suggestions: List[AnalysisSuggestion]
+
+
+class AnalysisOut(BaseModel):
+    """Analysis response."""
+    analysis_id: str
+    status: str
+    spans: List[AnalysisSpan] = Field(default_factory=list)
+    post_updated_after_snapshot: bool = False
+
+
+class AnalysisTriggerRequest(BaseModel):
+    """Trigger analysis payload."""
+    regenerate: Optional[bool] = False

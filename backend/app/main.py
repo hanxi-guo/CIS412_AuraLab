@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import DEFAULT_PORT, MEDIA_ROOT
 from .deps import init_db
-from .routes import campaigns, posts
+from .routes import analysis, campaigns, posts
 
 
 def create_app() -> FastAPI:
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
 
     application.include_router(campaigns.router)
     application.include_router(posts.router)
+    application.include_router(analysis.router)
 
     @application.on_event("startup")
     def on_startup() -> None:

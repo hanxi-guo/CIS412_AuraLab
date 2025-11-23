@@ -19,8 +19,8 @@ def _apply_brief(session: Session, campaign: Campaign, brief: Brief) -> None:
 
     # Replace brand voice tags
     stmt = delete(CampaignBrandVoice).where(
-        CampaignBrandVoice.campaign_id == campaign.id
-    )  # type: ignore[arg-type]
+        CampaignBrandVoice.campaign_id == campaign.id # type: ignore[arg-type]
+    )
     session.exec(stmt)  # type: ignore[arg-type]
     existing = set()
     for tag in brief.brand_voice[:BRAND_VOICE_MAX]:

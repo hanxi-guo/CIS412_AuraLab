@@ -18,7 +18,7 @@ Purpose: implement the AI-powered span highlighting and rewrite suggestions desc
 
 ## Data Handling
 - **Snapshot**: read `posts` + `campaigns` + `campaign_brand_voice` + `post_media`. Store a JSON snapshot in `post_analysis.input_snapshot` (title, caption, platform, brand_voice[], guardrails, target_audience, overview, media[]).
-- **Offsets**: spans returned by adapter must include `start_offset`/`end_offset` against the raw caption string (0-based, end-exclusive). Validate bounds before insert.
+- **Span text instead of offsets**: spans carry a `text` field (the exact highlighted substring). If multiple identical substrings exist, the client should use the first occurrence not already claimed by a previous span (no need to implement the selection logic server-side now).
 - **Persistence**:
   - `post_analysis`: `status` (`pending|running|complete|failed`), `error` (nullable), `model`, `prompt_version`, timestamps.
   - `analysis_spans`: `analysis_id`, `start_offset`, `end_offset`, `text`, `severity`, `category`, `message`.
@@ -42,24 +42,21 @@ Purpose: implement the AI-powered span highlighting and rewrite suggestions desc
 - Output example:
   ```json
   {
-    "summary": { "overall_score": 0.72, "tone_match": 0.8, "risks": ["unclear CTA"] },
-    "spans": [
-      {
-        "start_offset": 0,
-        "end_offset": 42,
-        "severity": "major",
-        "category": "clarity",
-        "message": "CTA is vague; focus on the benefit.",
-        "suggestions": [
-          {
-            "text": "Preview the new fall drop designed for weekend trips.",
-            "rationale": "Names the drop and use-case.",
-            "confidence": 0.62,
-            "style": "more concrete"
-          }
-        ]
-      }
-    ],
+  "spans": [
+    {
+      "text": "You won't believe our new drop!",
+      "severity": "major",
+      "message": "CTA is vague; focus on the benefit.",
+      "suggestions": [
+        {
+          "text": "Preview the new fall drop designed for weekend trips.",
+          "rationale": "Names the drop and use-case.",
+          "confidence": 0.62,
+          "style": "more concrete"
+        }
+      ]
+    }
+  ],
     "model": "mock-v1",
     "prompt_version": "1"
   }

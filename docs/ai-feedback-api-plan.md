@@ -7,8 +7,8 @@
 ## Data Model (proposed)
 - `campaign` (existing concept): `id`, `name`, `brief.overview`, `brief.target_audience`, `brief.brand_voice[]`, `brief.guardrails`.
 - `post`: `id` (uuid), `campaign_id`, `title`, `caption`, `media[]` (urls or storage ids), `platform` (enum), `status` (draft/published), timestamps.
-- `post_analysis`: `id` (uuid), `post_id`, `status` (pending/running/complete/failed), `source` (ai/human), `model`, `prompt_version`, `input_snapshot` (caption, title, platform, brand voice, guardrails, target audience), `summary` (overall_score, tone_match, risk_flags[]), timestamps, `error`.
-- `analysis_span`: `id` (uuid), `analysis_id`, `start_offset`, `end_offset` (0-based char offsets against the full caption), `text`, `severity` (minor/major/blocker), `category` (tone/clarity/compliance/other), `message` (short rationale), `suggestion_ids[]`.
+- `post_analysis`: `id` (uuid), `post_id`, `status` (pending/running/complete/failed), `source` (ai/human), `model`, `prompt_version`, `input_snapshot` (caption, title, platform, brand voice, guardrails, target audience), timestamps, `error`.
+- `analysis_span`: `id` (uuid), `analysis_id`, `text` (the exact span to highlight), `severity` (minor/major/blocker), `message` (short rationale), `suggestion_ids[]`. If multiple identical spans exist, default to the first occurrence not already used by a prior span (client-side selection; server just returns the text).
 - `suggestion`: `id` (uuid), `span_id`, `text` (replacement), `rationale`, `confidence` (0-1), optional `style` (short tag like “friendlier”, “more concise”).
 - Notes:
   - Offsets allow the frontend to render wavy underlines over arbitrary spans (not just sentence boundaries).
@@ -26,19 +26,11 @@
     {
       "analysis_id": "uuid",
       "status": "complete",
-      "summary": {
-        "overall_score": 0.76,
-        "tone_match": 0.82,
-        "risks": ["off-brand", "unclear CTA"]
-      },
       "spans": [
         {
           "span_id": "uuid",
-          "start_offset": 0,
-          "end_offset": 42,
           "text": "You won't believe our new drop!",
           "severity": "major",
-          "category": "clarity",
           "message": "CTA is vague; focus on the benefit.",
           "suggestions": [
             {
