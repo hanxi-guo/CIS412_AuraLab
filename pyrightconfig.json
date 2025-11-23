@@ -1,0 +1,9 @@
+{
+  "include": ["backend/app"],
+  "venvPath": "backend",
+  "venv": ".venv",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportOptionalSubscript": "warning",
+  "reportAttributeAccessIssue": "warning"
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Search, Plus, MoreHorizontal } from 'lucide-react';
 import type { Campaign } from '../types';
 import { MAX_CAMPAIGN_NAME_LENGTH, THEME } from '../config';
@@ -32,12 +32,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const showEmptyState = filteredCampaigns.length === 0 && campaigns.length > 0;
 
-  useEffect(() => {
-    // Reset menus when search changes to avoid weird states
+  const handleSearchChange = (value: string) => {
     setMenuOpenId(null);
     setRenamingId(null);
     setRenameValue('');
-  }, [searchTerm]);
+    onSearchChange(value);
+  };
 
   const startRename = (campaign: Campaign) => {
     setRenamingId(campaign.id);
@@ -68,7 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           type="text" 
           placeholder="Search campaigns" 
           value={searchTerm}
-          onChange={(e) => onSearchChange(e.target.value)}
+          onChange={(e) => handleSearchChange(e.target.value)}
           className="w-full pl-9 pr-4 py-2 rounded-full bg-[#EDEAE3] border border-transparent focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#C27A70] text-sm placeholder-gray-500 transition-all"
         />
       </div>
@@ -131,7 +131,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               ) : (
                 <button
                   onClick={() => onSelectCampaign(campaign.id)}
-                  className="flex-1 text-left px-1 py-1 rounded-lg focus:outline-none truncate"
+                  className="flex-1 text-left px-1 py-1 rounded-lg focus:outline-none truncate leading-[1.2]"
                   title={campaign.name}
                 >
                   {campaign.name}

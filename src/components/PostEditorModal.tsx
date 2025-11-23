@@ -10,7 +10,7 @@ import {
 import SocialPreview from './SocialPreview';
 import type { PreviewPlatform } from './SocialPreview';
 
-type UnderlineLevel = 'good' | 'ok' | 'bad';
+type UnderlineLevel = 'minor' | 'major';
 
 interface AnalyzedSentence {
   id: number;
@@ -26,27 +26,19 @@ interface PostEditorModalProps {
   existingPost?: Post | null;
 }
 
-const PLACEHOLDER_CONTENT: Record<
-  UnderlineLevel,
-  { analysis: string; suggestions: string[] }
-> = {
-  good: {
+const PLACEHOLDER_CONTENT: Record<UnderlineLevel, { analysis: string; suggestions: string[] }> = {
+  minor: {
     analysis:
-      'Nice! This sentence reads clearly and matches your overall tone well.',
-    suggestions: [],
-  },
-  ok: {
-    analysis:
-      'This sentence is okay, but it could be sharper, more specific, or more on-brand.',
+      'Minor error: this sentence could be sharper, more specific, or more on-brand.',
     suggestions: [
-      'Placeholder yellow suggestion 1: a slightly punchier version of this sentence.',
-      'Placeholder yellow suggestion 2: a clearer, more concise rewrite for mid-level tone.',
-      'Placeholder yellow suggestion 3: a more engaging, audience-focused version.',
+      'Placeholder orange suggestion 1: a slightly punchier version of this sentence.',
+      'Placeholder orange suggestion 2: a clearer, more concise rewrite for mid-level tone.',
+      'Placeholder orange suggestion 3: a more engaging, audience-focused version.',
     ],
   },
-  bad: {
+  major: {
     analysis:
-      'This sentence feels off-tone, unclear, or weak. It likely needs a stronger rewrite.',
+      'Major error: this sentence feels off-tone, unclear, or weak. It likely needs a stronger rewrite.',
     suggestions: [
       'Placeholder red suggestion 1: a bold, concise alternative with a clearer message.',
       'Placeholder red suggestion 2: a more confident and direct rewrite for this idea.',
@@ -62,9 +54,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   campaignName,
   existingPost,
 }) => {
-  const [title, setTitle] = useState('');
-  const [text, setText] = useState('');
-  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const [title, setTitle] = useState(existingPost?.title ?? '');
+  const [text, setText] = useState(existingPost?.caption ?? '');
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>(existingPost?.images ?? []);
   const [files, setFiles] = useState<File[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [previewPlatform, setPreviewPlatform] =
@@ -80,33 +72,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     null
   );
   const idleTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      setTitle(existingPost?.title ?? '');
-      setText(existingPost?.caption ?? '');
-      setImagePreviewUrls(existingPost?.images ?? []);
-      setFiles([]);
-      setCurrentImageIndex(0);
-      setPreviewPlatform('instagram');
-
-      // reset analysis state
-      setHasAnalysis(false);
-      setSentences([]);
-      setHoveredSentenceId(null);
-      setSelectedSentenceId(null);
-      if (idleTimerRef.current) {
-        window.clearTimeout(idleTimerRef.current);
-        idleTimerRef.current = null;
-      }
-    }
-  }, [isOpen, existingPost]);
-
-  useEffect(() => {
-    if (currentImageIndex >= imagePreviewUrls.length) {
-      setCurrentImageIndex(0);
-    }
-  }, [imagePreviewUrls, currentImageIndex]);
 
   // cleanup timer on unmount
   useEffect(() => {
@@ -165,7 +130,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     }
 
     const rawSentences = splitIntoSentences(text);
-    const levels: UnderlineLevel[] = ['good', 'ok', 'bad'];
+    const levels: UnderlineLevel[] = ['minor', 'major'];
 
     const analyzed: AnalyzedSentence[] = rawSentences.map((s, idx) => {
       const randomLevel = levels[Math.floor(Math.random() * levels.length)];
@@ -282,16 +247,17 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   };
 
   const colorForLevel = (level: UnderlineLevel): string => {
-    if (level === 'good') return '#16a34a';
-    if (level === 'ok') return '#f59e0b';
+    if (level === 'minor') return '#f59e0b';
     return '#dc2626';
   };
 
   const bgForLevel = (level: UnderlineLevel): string => {
-    if (level === 'good') return 'rgba(22, 163, 74, 0.12)';
-    if (level === 'ok') return 'rgba(245, 158, 11, 0.15)';
+    if (level === 'minor') return 'rgba(245, 158, 11, 0.15)';
     return 'rgba(220, 38, 38, 0.12)';
   };
+
+  const labelForLevel = (level: UnderlineLevel): string =>
+    level === 'minor' ? 'Minor error' : 'Major error';
 
   const handleHighlightedClick = () => {
     // clicking the analyzed area (but not a specific sentence) goes back to raw textarea
@@ -322,7 +288,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           ? {
               ...s,
               text: suggestion,
-              level: 'good', // after choosing a suggestion, mark as good
+              level: 'minor', // after choosing a suggestion, mark as improved
             }
           : s
     );
@@ -358,9 +324,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
         {/* Left Panel: Editor */}
         <form
           onSubmit={handleSubmit}
-          className="w-1/2 p-10 border-r border-[#E6E1D6] flex flex-col overflow-y-auto"
-        >
-          <h2 className={`text-3xl font-semibold ${THEME.textMain} mb-8`}>
+        className="w-1/2 p-10 border-r border-[#E6E1D6] flex flex-col overflow-y-auto"
+      >
+          <h2 className={`text-3xl font-semibold ${THEME.textMain} leading-[1.2] pb-1 mb-8`}>
             {campaignName}
           </h2>
 
@@ -528,6 +494,17 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
               <p className="text-sm text-gray-500 mb-3">
                 “{selectedSentence.text.trim()}”
               </p>
+              <div className="mb-3">
+                <span
+                  className={`inline-flex items-center px-3 py-1 text-xs font-semibold tracking-wide uppercase rounded-full ${
+                    selectedSentence.level === 'minor'
+                      ? 'bg-[#FEF3C7] text-[#92400E]'
+                      : 'bg-[#FEE2E2] text-[#991B1B]'
+                  }`}
+                >
+                  {labelForLevel(selectedSentence.level)}
+                </span>
+              </div>
 
               <p className="text-sm text-gray-800 mb-4">
                 {PLACEHOLDER_CONTENT[selectedSentence.level].analysis}

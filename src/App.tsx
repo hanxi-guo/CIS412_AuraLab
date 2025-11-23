@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
 import {
   INITIAL_CAMPAIGNS,
@@ -33,11 +33,10 @@ const App: React.FC = () => {
   );
 
   const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
-
-  useEffect(() => {
-    // Clear brand voice input when switching campaigns
+  const handleSelectCampaign = (id: string) => {
+    setSelectedCampaignId(id);
     setBrandVoiceInput('');
-  }, [selectedCampaignId]);
+  };
 
   // --- Handlers for posts ---
 
@@ -135,7 +134,7 @@ const App: React.FC = () => {
     };
 
     setCampaigns((prev) => [...prev, newCampaign]);
-    setSelectedCampaignId(newCampaign.id);
+    handleSelectCampaign(newCampaign.id);
     setIsNewCampaignModalOpen(false);
   };
 
@@ -245,10 +244,10 @@ const App: React.FC = () => {
     if (selectedCampaignId === id) {
       const remaining = campaigns.filter((c) => c.id !== id);
       if (remaining.length > 0) {
-        setSelectedCampaignId(remaining[0].id);
+        handleSelectCampaign(remaining[0].id);
       } else {
         // no campaigns left
-        setSelectedCampaignId('');
+        handleSelectCampaign('');
       }
     }
 
@@ -266,7 +265,7 @@ const App: React.FC = () => {
         campaigns={campaigns}
         filteredCampaigns={filteredCampaigns}
         selectedCampaignId={selectedCampaignId}
-        onSelectCampaign={setSelectedCampaignId}
+        onSelectCampaign={handleSelectCampaign}
         onNewCampaign={() => setIsNewCampaignModalOpen(true)}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
@@ -282,7 +281,7 @@ const App: React.FC = () => {
               {/* Header */}
               <div className="flex justify-between items-end mb-6">
                 <h1
-                  className={`text-4xl font-bold ${THEME.textMain} truncate`}
+                  className={`text-4xl font-bold ${THEME.textMain} truncate leading-[1.15] pb-1`}
                   title={selectedCampaign?.name}
                 >
                   {selectedCampaign?.name ?? 'Campaign'}
@@ -526,16 +525,19 @@ const App: React.FC = () => {
       </main>
 
       {/* Post Editor Modal */}
-      <PostEditorModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingPost(null);
-        }}
-        onSave={handleSavePost}
-        campaignName={selectedCampaign?.name ?? 'Campaign'}
-        existingPost={editingPost}
-      />
+      {isModalOpen && (
+        <PostEditorModal
+          key={editingPost ? `edit-${editingPost.id}` : 'new'}
+          isOpen
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingPost(null);
+          }}
+          onSave={handleSavePost}
+          campaignName={selectedCampaign?.name ?? 'Campaign'}
+          existingPost={editingPost}
+        />
+      )}
 
       {/* New Campaign Modal */}
       <NewCampaignModal
