@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
 import {
-  INITIAL_CAMPAIGNS,
   MAX_BRIEF_LENGTH,
   MAX_CAMPAIGN_NAME_LENGTH,
   MAX_BRAND_VOICE_TAGS,
@@ -12,12 +11,19 @@ import Sidebar from './components/Sidebar';
 import PostEditorModal from './components/PostEditorModal';
 import ConfirmModal from './components/ConfirmModal';
 import NewCampaignModal from './components/NewCampaignModal';
+import {
+  createCampaign,
+  createPost,
+  deleteCampaign,
+  deletePost,
+  fetchCampaigns,
+  updateCampaign,
+  updatePost,
+} from './api';
 
 const App: React.FC = () => {
-  const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(
-    INITIAL_CAMPAIGNS[0]?.id ?? ''
-  );
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isNewCampaignModalOpen, setIsNewCampaignModalOpen] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -27,6 +33,23 @@ const App: React.FC = () => {
   );
   const [postPendingDelete, setPostPendingDelete] = useState<Post | null>(null);
   const [brandVoiceInput, setBrandVoiceInput] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await fetchCampaigns();
+        setCampaigns(data);
+        setSelectedCampaignId(data[0]?.id ?? '');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load campaigns');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const filteredCampaigns = campaigns.filter((c) =>
     c.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -40,112 +63,100 @@ const App: React.FC = () => {
 
   // --- Handlers for posts ---
 
-  const handleSavePost = (data: PostDraft) => {
+  const handleSavePost = async (data: PostDraft) => {
     if (!selectedCampaign) return;
 
-    if (editingPost) {
-      // EDIT
-      setCampaigns((prev) =>
-        prev.map((c) =>
-          c.id === selectedCampaignId
-            ? {
-                ...c,
-                posts: c.posts.map((p) =>
-                  p.id === editingPost.id
-                    ? {
-                        ...p,
-                        title: data.title || p.title,
-                        caption: data.text ?? p.caption,
-                        images: data.images.length > 0 ? data.images : [],
-                      }
-                    : p
-                ),
-              }
-            : c
-        )
-      );
-    } else {
-      // CREATE
-      setCampaigns((prev) =>
-        prev.map((c) =>
-          c.id === selectedCampaignId
-            ? {
-                ...c,
-                posts: [
-                  {
-                    id: Date.now(),
-                    title: data.title || 'Untitled post',
-                    caption: data.text,
-                    images: data.images,
-                  },
-                  ...c.posts,
-                ],
-              }
-            : c
-        )
-      );
+    try {
+      if (editingPost) {
+        const updated = await updatePost(editingPost.id, {
+          title: data.title,
+          caption: data.text,
+          platform: 'instagram',
+        });
+        setCampaigns((prev) =>
+          prev.map((c) =>
+            c.id === selectedCampaignId
+              ? {
+                  ...c,
+                  posts: c.posts.map((p) => (p.id === updated.id ? updated : p)),
+                }
+              : c
+          )
+        );
+      } else {
+        const created = await createPost(selectedCampaignId, {
+          title: data.title || 'Untitled post',
+          caption: data.text,
+          platform: 'instagram',
+          status: 'draft',
+        });
+        setCampaigns((prev) =>
+          prev.map((c) =>
+            c.id === selectedCampaignId ? { ...c, posts: [created, ...c.posts] } : c
+          )
+        );
+      }
+      setIsModalOpen(false);
+      setEditingPost(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save post');
     }
-
-    // later: send data.files, data.title, data.text to backend
-    setIsModalOpen(false);
-    setEditingPost(null);
   };
 
-  const handleDeletePost = (postId: number) => {
+  const handleDeletePost = (postId: string) => {
     const campaign = campaigns.find((c) => c.id === selectedCampaignId);
     const post = campaign?.posts.find((p) => p.id === postId);
     if (!post) return;
     setPostPendingDelete(post);
   };
 
-  const confirmDeletePost = () => {
+  const confirmDeletePost = async () => {
     if (!postPendingDelete) return;
 
     const postId = postPendingDelete.id;
 
-    setCampaigns((prev) =>
-      prev.map((c) =>
-        c.id === selectedCampaignId
-          ? { ...c, posts: c.posts.filter((p) => p.id !== postId) }
-          : c
-      )
-    );
-
-    setPostPendingDelete(null);
+    try {
+      await deletePost(postId);
+      setCampaigns((prev) =>
+        prev.map((c) =>
+          c.id === selectedCampaignId
+            ? { ...c, posts: c.posts.filter((p) => p.id !== postId) }
+            : c
+        )
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete post');
+    } finally {
+      setPostPendingDelete(null);
+    }
   };
 
   // --- Handlers for campaigns ---
 
-  const handleCreateCampaign = (name: string) => {
+  const handleCreateCampaign = async (name: string) => {
     const safeName = name.slice(0, MAX_CAMPAIGN_NAME_LENGTH);
-    const newId =
-      safeName.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now().toString(36);
 
-    const newCampaign: Campaign = {
-      id: newId,
-      name: safeName,
-      posts: [],
-      brief: {
-        overview: '',
-        targetAudience: '',
-        brandVoice: [],
-        guardrails: '',
-      },
-    };
-
-    setCampaigns((prev) => [...prev, newCampaign]);
-    handleSelectCampaign(newCampaign.id);
-    setIsNewCampaignModalOpen(false);
+    try {
+      const created = await createCampaign(safeName);
+      setCampaigns((prev) => [...prev, created]);
+      handleSelectCampaign(created.id);
+      setIsNewCampaignModalOpen(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create campaign');
+    }
   };
 
-  const handleRenameCampaign = (id: string, newName: string) => {
+  const handleRenameCampaign = async (id: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed) return;
     const safe = trimmed.slice(0, MAX_CAMPAIGN_NAME_LENGTH);
 
-    setCampaigns((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, name: safe } : c))
-    );
+    try {
+      const updated = await updateCampaign(id, { name: safe });
+      setCampaigns((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to rename campaign');
+    }
   };
 
   const handleUpdateCampaignBriefField = (
@@ -153,10 +164,16 @@ const App: React.FC = () => {
     field: keyof Campaign['brief'],
     value: string
   ) => {
+    if (!selectedCampaign) return;
     if (value.length > MAX_BRIEF_LENGTH) {
       alert(`This field cannot exceed ${MAX_BRIEF_LENGTH} characters.`);
     }
     const safe = value.slice(0, MAX_BRIEF_LENGTH);
+
+    const briefUpdates = {
+      ...selectedCampaign.brief,
+      [field]: safe,
+    } as Campaign['brief'];
 
     setCampaigns((prev) =>
       prev.map((c) =>
@@ -171,6 +188,15 @@ const App: React.FC = () => {
           : c
       )
     );
+
+    updateCampaign(id, {
+      overview: briefUpdates.overview,
+      targetAudience: briefUpdates.targetAudience,
+      brandVoice: briefUpdates.brandVoice,
+      guardrails: briefUpdates.guardrails,
+    }).catch((err) => {
+      alert(err instanceof Error ? err.message : 'Failed to update brief');
+    });
   };
 
   const handleAddBrandVoiceTag = () => {
@@ -193,6 +219,7 @@ const App: React.FC = () => {
       return;
     }
 
+    const nextTags = [...selectedCampaign.brief.brandVoice, raw];
     setCampaigns((prev) =>
       prev.map((c) =>
         c.id === selectedCampaign.id
@@ -200,12 +227,21 @@ const App: React.FC = () => {
               ...c,
               brief: {
                 ...c.brief,
-                brandVoice: [...c.brief.brandVoice, raw],
+                brandVoice: nextTags,
               },
             }
           : c
       )
     );
+
+    updateCampaign(selectedCampaign.id, {
+      overview: selectedCampaign.brief.overview,
+      targetAudience: selectedCampaign.brief.targetAudience,
+      brandVoice: nextTags,
+      guardrails: selectedCampaign.brief.guardrails,
+    }).catch((err) => {
+      alert(err instanceof Error ? err.message : 'Failed to update brand voice');
+    });
 
     setBrandVoiceInput('');
   };
@@ -226,6 +262,15 @@ const App: React.FC = () => {
           : c
       )
     );
+
+    updateCampaign(selectedCampaign.id, {
+      overview: selectedCampaign.brief.overview,
+      targetAudience: selectedCampaign.brief.targetAudience,
+      brandVoice: selectedCampaign.brief.brandVoice.filter((tag) => tag !== tagToRemove),
+      guardrails: selectedCampaign.brief.guardrails,
+    }).catch((err) => {
+      alert(err instanceof Error ? err.message : 'Failed to update brand voice');
+    });
   };
 
   const handleDeleteCampaign = (id: string) => {
@@ -234,12 +279,19 @@ const App: React.FC = () => {
     setCampaignPendingDelete(campaign);
   };
 
-  const confirmDeleteCampaign = () => {
+  const confirmDeleteCampaign = async () => {
     if (!campaignPendingDelete) return;
 
     const id = campaignPendingDelete.id;
 
-    setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await deleteCampaign(id);
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete campaign');
+      setCampaignPendingDelete(null);
+      return;
+    }
 
     if (selectedCampaignId === id) {
       const remaining = campaigns.filter((c) => c.id !== id);
@@ -261,6 +313,16 @@ const App: React.FC = () => {
 
   return (
     <div className={`flex w-full h-screen ${THEME.bg} font-sans overflow-hidden`}>
+      {loading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-sm text-[#4A4238]">
+          Loading campaigns...
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-sm text-red-700">
+          {error}
+        </div>
+      )}
       <Sidebar
         campaigns={campaigns}
         filteredCampaigns={filteredCampaigns}
@@ -535,6 +597,7 @@ const App: React.FC = () => {
           }}
           onSave={handleSavePost}
           campaignName={selectedCampaign?.name ?? 'Campaign'}
+          campaignBrief={selectedCampaign?.brief}
           existingPost={editingPost}
         />
       )}

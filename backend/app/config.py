@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'storage' / 'au
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "storage" / "media"))
 
 # Server settings
-DEFAULT_PORT = int(os.getenv("PORT", "4000"))
+DEFAULT_PORT = int(os.getenv("PORT", "8000"))
 
 # Validation limits
 TITLE_MAX = 120

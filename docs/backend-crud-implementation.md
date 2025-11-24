@@ -37,7 +37,7 @@ backend/
 ## Configuration
 - `DATABASE_URL=sqlite:///./storage/aura.db`
 - `MEDIA_ROOT=storage/media`
-- `PORT` default 4000
+- `PORT` default 8000
 - Limits: caption 4000 chars, title 120, brand voice tags max 8, media max 5 per post, file size cap ~10MB each.
 
 ## Database Schema (SQLite, via SQLModel)

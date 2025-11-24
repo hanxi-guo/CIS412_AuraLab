@@ -2,6 +2,7 @@
 # pylint: disable=missing-module-docstring,missing-function-docstring,missing-class-docstring
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
+from uuid import uuid4
 
 from sqlmodel import Session, delete, select
 
@@ -186,6 +187,39 @@ def _analysis_out(session: Session, analysis: PostAnalysis) -> AnalysisOut:
         spans=spans_payload,
         post_updated_after_snapshot=stale,
     )
+
+
+def _draft_out(raw: Dict[str, Any]) -> AnalysisOut:
+    spans_payload = [
+        AnalysisSpanSchema(
+            id=s.get("id") or str(uuid4()),
+            text=s.get("text", ""),
+            severity=s.get("severity", "minor"),
+            message=s.get("message", ""),
+            suggestions=[
+                AnalysisSuggestionSchema(
+                    id=sg.get("id") or str(uuid4()),
+                    text=sg.get("text", ""),
+                    rationale=sg.get("rationale"),
+                    confidence=sg.get("confidence"),
+                    style=sg.get("style"),
+                )
+                for sg in (s.get("suggestions") or [])
+            ],
+        )
+        for s in (raw.get("spans") or [])
+    ]
+    return AnalysisOut(
+        analysis_id=str(uuid4()),
+        status="complete",
+        spans=spans_payload,
+        post_updated_after_snapshot=False,
+    )
+
+
+def run_draft(snapshot: Dict[str, Any]) -> AnalysisOut:
+    result = generate_feedback(snapshot)
+    return _draft_out(result)
 
 
 def get_analysis(session: Session, post_id: str, analysis_id: str) -> Optional[AnalysisOut]:

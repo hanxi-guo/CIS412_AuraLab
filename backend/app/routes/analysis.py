@@ -44,3 +44,10 @@ def get_analysis(
 @router.get("/posts/{post_id}/analysis/latest", response_model=Optional[AnalysisOut])
 def get_latest_analysis(post_id: str, session: Session = Depends(get_session)):
     return analysis_service.latest_analysis(session, post_id)
+
+
+@router.post("/analysis/draft", response_model=AnalysisOut)
+def analyze_draft(payload: dict):
+    """Run a draft analysis without persisting."""
+    result = analysis_service.run_draft(payload)
+    return result

@@ -14,6 +14,11 @@ npm run dev
 ```
 Then open the URL printed in the terminal (usually http://localhost:5173).
 
+## Run lint (recommended before committing)
+```bash
+npm run lint
+```
+
 ## Lint
 ```bash
 npm run lint
@@ -31,8 +36,8 @@ npm run build
   python -m venv .venv && source .venv/bin/activate
   pip install -r requirements.txt
   ```
-- Run the server (defaults to port 4000):
+- Run the server (defaults to port 8000):
   ```bash
-  uvicorn app.main:app --app-dir backend/app --reload
+  uvicorn app.main:app --app-dir backend/app --reload --port 8000
   ```
 - Media is stored under `backend/storage/media`, SQLite DB at `backend/storage/aura.db`.

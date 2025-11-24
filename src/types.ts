@@ -1,18 +1,18 @@
 // Shared domain types
 
 export interface Post {
-    id: number;
-    title: string;
-    images: string[];
-    caption?: string;
-  }
-  
-  export interface PostDraft {
-    title: string;
-    text: string;
-    images: string[];
-    files: File[];
-  }
+  id: string;
+  title: string;
+  images: string[];
+  caption?: string;
+}
+
+export interface PostDraft {
+  title: string;
+  text: string;
+  images: string[];
+  files: File[];
+}
   
   export interface ReferenceFile {
     id: string;
@@ -35,17 +35,32 @@ export interface Post {
   
   export type TabType = 'preview' | 'analysis';
   
-  export interface CampaignBrief {
-    overview: string;        // High-level description / objective
-    targetAudience: string;  // Who we’re talking to
-    brandVoice: string[];    // Tag-style labels: “warm”, “intimate”, etc.
-    guardrails: string;      // Do’s / don’ts, constraints
-  }
-  
-  export interface Campaign {
-    id: string;
-    name: string;
-    posts: Post[];
-    brief: CampaignBrief;
-  }
-  
+export interface CampaignBrief {
+  overview: string; // High-level description / objective
+  targetAudience: string; // Who we’re talking to
+  brandVoice: string[]; // Tag-style labels: “warm”, “intimate”, etc.
+  guardrails: string; // Do’s / don’ts, constraints
+}
+
+export interface Campaign {
+  id: string;
+  name: string;
+  posts: Post[];
+  brief: CampaignBrief;
+}
+
+export interface AnalysisSuggestion {
+  id: string;
+  text: string;
+  rationale?: string;
+  confidence?: number;
+  style?: string;
+}
+
+export interface AnalysisSpan {
+  id: string;
+  text: string;
+  severity: 'minor' | 'major' | 'blocker';
+  message: string;
+  suggestions: AnalysisSuggestion[];
+}

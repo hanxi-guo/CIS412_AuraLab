@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
-import type { Post, PostDraft } from '../types';
+import type { CampaignBrief, Post, PostDraft, AnalysisSpan, AnalysisSuggestion } from '../types';
 import {
   MAX_CAPTION_LENGTH,
   MAX_IMAGES_PER_POST,
@@ -9,13 +9,13 @@ import {
 } from '../config';
 import SocialPreview from './SocialPreview';
 import type { PreviewPlatform } from './SocialPreview';
+import { runDraftAnalysis } from '../api';
 
-type UnderlineLevel = 'minor' | 'major';
+type Severity = 'minor' | 'major' | 'blocker';
 
-interface AnalyzedSentence {
-  id: number;
-  text: string;
-  level: UnderlineLevel;
+interface MappedSpan extends AnalysisSpan {
+  start: number;
+  end: number;
 }
 
 interface PostEditorModalProps {
@@ -23,28 +23,78 @@ interface PostEditorModalProps {
   onClose: () => void;
   onSave: (data: PostDraft) => void;
   campaignName: string;
+  campaignBrief?: CampaignBrief;
   existingPost?: Post | null;
 }
 
-const PLACEHOLDER_CONTENT: Record<UnderlineLevel, { analysis: string; suggestions: string[] }> = {
-  minor: {
-    analysis:
-      'Minor error: this sentence could be sharper, more specific, or more on-brand.',
-    suggestions: [
-      'Placeholder orange suggestion 1: a slightly punchier version of this sentence.',
-      'Placeholder orange suggestion 2: a clearer, more concise rewrite for mid-level tone.',
-      'Placeholder orange suggestion 3: a more engaging, audience-focused version.',
-    ],
-  },
-  major: {
-    analysis:
-      'Major error: this sentence feels off-tone, unclear, or weak. It likely needs a stronger rewrite.',
-    suggestions: [
-      'Placeholder red suggestion 1: a bold, concise alternative with a clearer message.',
-      'Placeholder red suggestion 2: a more confident and direct rewrite for this idea.',
-      'Placeholder red suggestion 3: a more audience-centric phrasing with a clear hook.',
-    ],
-  },
+const colorForSeverity = (level: Severity): string => {
+  if (level === 'minor') return '#f59e0b';
+  return '#dc2626';
+};
+
+const bgForSeverity = (level: Severity): string => {
+  if (level === 'minor') return 'rgba(245, 158, 11, 0.15)';
+  return 'rgba(220, 38, 38, 0.12)';
+};
+
+const labelForSeverity = (level: Severity): string =>
+  level === 'minor' ? 'Minor issue' : level === 'major' ? 'Major issue' : 'Blocker';
+
+const mapSpansToRanges = (text: string, spans: AnalysisSpan[]): MappedSpan[] => {
+  const used: Array<[number, number]> = [];
+  const results: MappedSpan[] = [];
+
+  const overlaps = (start: number, end: number): boolean =>
+    used.some(([s, e]) => !(end <= s || start >= e));
+
+  const findSlot = (needle: string): { start: number; end: number } | null => {
+    if (!needle) return null;
+    let idx = 0;
+    while (idx < text.length) {
+      const found = text.indexOf(needle, idx);
+      if (found === -1) return null;
+      const end = found + needle.length;
+      if (!overlaps(found, end)) {
+        used.push([found, end]);
+        return { start: found, end };
+      }
+      idx = found + 1;
+    }
+    return null;
+  };
+
+  spans.forEach((span) => {
+    const slot = findSlot(span.text || '');
+    if (!slot) return;
+    results.push({
+      ...span,
+      severity: (span.severity as Severity) || 'minor',
+      start: slot.start,
+      end: slot.end,
+    });
+  });
+
+  return results.sort((a, b) => a.start - b.start);
+};
+
+const buildFragments = (text: string, spans: MappedSpan[]) => {
+  const fragments: Array<{ key: string; text: string; span?: MappedSpan }> = [];
+  let cursor = 0;
+  spans.forEach((span) => {
+    if (span.start > cursor) {
+      fragments.push({ key: `plain-${cursor}`, text: text.slice(cursor, span.start) });
+    }
+    fragments.push({
+      key: `span-${span.id}-${span.start}`,
+      text: text.slice(span.start, span.end),
+      span,
+    });
+    cursor = span.end;
+  });
+  if (cursor < text.length) {
+    fragments.push({ key: `plain-tail`, text: text.slice(cursor) });
+  }
+  return fragments;
 };
 
 const PostEditorModal: React.FC<PostEditorModalProps> = ({
@@ -52,6 +102,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   onClose,
   onSave,
   campaignName,
+  campaignBrief,
   existingPost,
 }) => {
   const [title, setTitle] = useState(existingPost?.title ?? '');
@@ -59,21 +110,17 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>(existingPost?.images ?? []);
   const [files, setFiles] = useState<File[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [previewPlatform, setPreviewPlatform] =
-    useState<PreviewPlatform>('instagram');
+  const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('instagram');
 
-  // sentence-level “analysis”
   const [hasAnalysis, setHasAnalysis] = useState(false);
-  const [sentences, setSentences] = useState<AnalyzedSentence[]>([]);
-  const [hoveredSentenceId, setHoveredSentenceId] = useState<number | null>(
-    null
-  );
-  const [selectedSentenceId, setSelectedSentenceId] = useState<number | null>(
-    null
-  );
+  const [spans, setSpans] = useState<MappedSpan[]>([]);
+  const [hoveredSpanId, setHoveredSpanId] = useState<string | null>(null);
+  const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const requestCounterRef = useRef(0);
   const idleTimerRef = useRef<number | null>(null);
 
-  // cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (idleTimerRef.current) {
@@ -84,75 +131,64 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
   if (!isOpen) return null;
 
-  // --- sentence splitting + fake analysis ---
-  const splitIntoSentences = (input: string): string[] => {
-    const result: string[] = [];
-    let current = '';
-
-    const separators = new Set(['.', '!', '?', '\n']);
-
-    for (let i = 0; i < input.length; i++) {
-      const ch = input[i];
-      current += ch;
-
-      if (separators.has(ch)) {
-        // look ahead to swallow consecutive separators/spaces/newlines
-        while (
-          i + 1 < input.length &&
-          (separators.has(input[i + 1]) || input[i + 1] === ' ')
-        ) {
-          i++;
-          current += input[i];
-        }
-        result.push(current);
-        current = '';
-      }
-    }
-
-    if (current.trim().length > 0) {
-      result.push(current);
-    }
-
-    if (result.length === 0 && input.trim().length > 0) {
-      return [input];
-    }
-
-    return result;
-  };
-
-  const runSentenceAnalysis = () => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setHasAnalysis(false);
-      setSentences([]);
-      setSelectedSentenceId(null);
-      return;
-    }
-
-    const rawSentences = splitIntoSentences(text);
-    const levels: UnderlineLevel[] = ['minor', 'major'];
-
-    const analyzed: AnalyzedSentence[] = rawSentences.map((s, idx) => {
-      const randomLevel = levels[Math.floor(Math.random() * levels.length)];
-      return {
-        id: idx,
-        text: s,
-        level: randomLevel,
-      };
-    });
-
-    setSentences(analyzed);
-    setHasAnalysis(true);
-    setSelectedSentenceId(null);
-  };
-
-  const scheduleIdleAnalysis = () => {
+  const scheduleAnalysis = () => {
     if (idleTimerRef.current) {
       window.clearTimeout(idleTimerRef.current);
     }
     idleTimerRef.current = window.setTimeout(() => {
-      runSentenceAnalysis();
-    }, 10000); // 10 seconds
+      runAnalysis();
+    }, 1200);
+  };
+
+  const runAnalysis = async () => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setHasAnalysis(false);
+      setSpans([]);
+      setSelectedSpanId(null);
+      return;
+    }
+
+    const reqId = requestCounterRef.current + 1;
+    requestCounterRef.current = reqId;
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const res = await runDraftAnalysis({
+        title,
+        caption: trimmed,
+        platform: previewPlatform,
+        campaignContext: campaignBrief
+          ? {
+              overview: campaignBrief.overview,
+              target_audience: campaignBrief.targetAudience,
+              brand_voice: campaignBrief.brandVoice,
+              guardrails: campaignBrief.guardrails,
+            }
+          : undefined,
+      });
+
+      if (reqId !== requestCounterRef.current) {
+        return;
+      }
+
+      const mapped = mapSpansToRanges(trimmed, res.spans || []);
+      setSpans(mapped);
+      setHasAnalysis(mapped.length > 0);
+      setSelectedSpanId(null);
+    } catch (err) {
+      if (reqId !== requestCounterRef.current) {
+        return;
+      }
+      setAnalysisError((err as Error).message);
+      setHasAnalysis(false);
+      setSpans([]);
+    } finally {
+      if (reqId === requestCounterRef.current) {
+        setIsAnalyzing(false);
+      }
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,7 +220,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     setImagePreviewUrls((prev) => [...prev, ...newUrls]);
     setCurrentImageIndex(0);
 
-    // Reset input so selecting the same file again works
     e.target.value = '';
   };
 
@@ -230,12 +265,11 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     }
     setText(value.slice(0, MAX_CAPTION_LENGTH));
 
-    // user is typing → clear existing analysis and schedule a new one
     setHasAnalysis(false);
-    setSentences([]);
-    setHoveredSentenceId(null);
-    setSelectedSentenceId(null);
-    scheduleIdleAnalysis();
+    setSpans([]);
+    setHoveredSpanId(null);
+    setSelectedSpanId(null);
+    scheduleAnalysis();
   };
 
   const handleCaptionBlur = () => {
@@ -243,63 +277,39 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       window.clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
     }
-    runSentenceAnalysis();
+    runAnalysis();
   };
-
-  const colorForLevel = (level: UnderlineLevel): string => {
-    if (level === 'minor') return '#f59e0b';
-    return '#dc2626';
-  };
-
-  const bgForLevel = (level: UnderlineLevel): string => {
-    if (level === 'minor') return 'rgba(245, 158, 11, 0.15)';
-    return 'rgba(220, 38, 38, 0.12)';
-  };
-
-  const labelForLevel = (level: UnderlineLevel): string =>
-    level === 'minor' ? 'Minor error' : 'Major error';
 
   const handleHighlightedClick = () => {
-    // clicking the analyzed area (but not a specific sentence) goes back to raw textarea
     setHasAnalysis(false);
-    setHoveredSentenceId(null);
-    setSelectedSentenceId(null);
+    setHoveredSpanId(null);
+    setSelectedSpanId(null);
   };
 
-  const handleSentenceClick = (
-    e: React.MouseEvent<HTMLSpanElement>,
-    sentenceId: number
-  ) => {
-    e.stopPropagation(); // prevent closing analysis view
-    setSelectedSentenceId(sentenceId);
+  const handleSpanClick = (e: React.MouseEvent<HTMLSpanElement>, spanId: string) => {
+    e.stopPropagation();
+    setSelectedSpanId(spanId);
   };
 
-  const selectedSentence =
-    selectedSentenceId !== null
-      ? sentences.find((s) => s.id === selectedSentenceId) ?? null
+  const selectedSpan =
+    selectedSpanId !== null
+      ? spans.find((s) => s.id === selectedSpanId) ?? null
       : null;
 
-  const handleSuggestionClick = (suggestion: string) => {
-    if (!selectedSentence) return;
-
-    const updated: AnalyzedSentence[] = sentences.map(
-      (s): AnalyzedSentence =>
-        s.id === selectedSentence.id
-          ? {
-              ...s,
-              text: suggestion,
-              level: 'minor', // after choosing a suggestion, mark as improved
-            }
-          : s
-    );
-    setSentences(updated);
-
-    // sync back to main text; here we just join with a space
-    const newText = updated.map((s) => s.text).join(' ');
-    setText(newText);
-
-    setSelectedSentenceId(null);
+  const handleSuggestionClick = (suggestion: AnalysisSuggestion) => {
+    if (!selectedSpan) return;
+    const updatedText =
+      text.slice(0, selectedSpan.start) +
+      suggestion.text +
+      text.slice(selectedSpan.end);
+    setText(updatedText);
+    setSelectedSpanId(null);
+    setHasAnalysis(false);
+    setSpans([]);
+    scheduleAnalysis();
   };
+
+  const fragments = hasAnalysis ? buildFragments(text, spans) : [];
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
@@ -322,10 +332,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
         </button>
 
         {/* Left Panel: Editor */}
-        <form
-          onSubmit={handleSubmit}
-        className="w-1/2 p-10 border-r border-[#E6E1D6] flex flex-col overflow-y-auto"
-      >
+        <form onSubmit={handleSubmit} className="w-1/2 p-10 border-r border-[#E6E1D6] flex flex-col overflow-y-auto">
           <h2 className={`text-3xl font-semibold ${THEME.textMain} leading-[1.2] pb-1 mb-8`}>
             {campaignName}
           </h2>
@@ -344,11 +351,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
             </div>
           </div>
 
-          {/* Text Area + Highlighted Sentences */}
+          {/* Text Area + Highlighted Spans */}
           <div className="flex-1 mb-6 min-h-[200px]">
-            <div
-              className={`relative w-full h-full border-2 ${THEME.border} rounded-2xl bg-white`}
-            >
+            <div className="relative w-full h-full border-2 border-[#D1CBC1] rounded-2xl bg-white">
               {!hasAnalysis && (
                 <textarea
                   placeholder="Text"
@@ -364,37 +369,41 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                   className="absolute inset-0 px-4 py-4 text-lg whitespace-pre-wrap overflow-auto cursor-text"
                   onClick={handleHighlightedClick}
                 >
-                  {sentences.length > 0
-                    ? sentences.map((s) => {
-                        const underlineColor = colorForLevel(s.level);
-                        const isHovered = hoveredSentenceId === s.id;
-                        return (
-                          <span
-                            key={s.id}
-                            onMouseEnter={() => setHoveredSentenceId(s.id)}
-                            onMouseLeave={() => setHoveredSentenceId(null)}
-                            onClick={(e) => handleSentenceClick(e, s.id)}
-                            style={{
-                              textDecorationLine: 'underline',
-                              textDecorationStyle: 'wavy',
-                              textDecorationColor: underlineColor,
-                              backgroundColor: isHovered
-                                ? bgForLevel(s.level)
-                                : 'transparent',
-                              transition: 'background-color 120ms ease-out',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {s.text}
-                          </span>
-                        );
-                      })
-                    : text}
+                  {fragments.map((frag) =>
+                    frag.span ? (
+                      <span
+                        key={frag.key}
+                        onMouseEnter={() => setHoveredSpanId(frag.span?.id ?? null)}
+                        onMouseLeave={() => setHoveredSpanId(null)}
+                        onClick={(e) => handleSpanClick(e, frag.span?.id ?? '')}
+                        style={{
+                          textDecorationLine: 'underline',
+                          textDecorationStyle: 'wavy',
+                          textDecorationColor: colorForSeverity(frag.span.severity),
+                          backgroundColor:
+                            hoveredSpanId === frag.span.id
+                              ? bgForSeverity(frag.span.severity)
+                              : 'transparent',
+                          transition: 'background-color 120ms ease-out',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {frag.text}
+                      </span>
+                    ) : (
+                      <span key={frag.key}>{frag.text}</span>
+                    )
+                  )}
                 </div>
               )}
             </div>
-            <div className="mt-1 text-xs text-right text-[#8C857B]">
-              {text.length}/{MAX_CAPTION_LENGTH}
+            <div className="mt-1 text-xs text-right text-[#8C857B] flex justify-between">
+              <span className="text-left text-emerald-700">
+                {isAnalyzing ? 'Analyzing…' : analysisError ? analysisError : ''}
+              </span>
+              <span>
+                {text.length}/{MAX_CAPTION_LENGTH}
+              </span>
             </div>
           </div>
 
@@ -469,22 +478,21 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           setCurrentImageIndex={setCurrentImageIndex}
         />
 
-        {/* Sentence Analysis Popup */}
-        {selectedSentence && (
+        {/* Span Analysis Popup */}
+        {selectedSpan && (
           <div className="absolute inset-0 z-50 flex items-center justify-center">
-            {/* Popup backdrop (inside the card) */}
             <div
               className="absolute inset-0 bg-black/20"
-              onClick={() => setSelectedSentenceId(null)}
+              onClick={() => setSelectedSpanId(null)}
             />
             <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl p-6">
               <div className="flex items-start justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Sentence feedback
+                  Span feedback
                 </h3>
                 <button
                   type="button"
-                  onClick={() => setSelectedSentenceId(null)}
+                  onClick={() => setSelectedSpanId(null)}
                   className="p-1 rounded-full hover:bg-gray-100"
                 >
                   <X className="w-4 h-4 text-gray-500" />
@@ -492,43 +500,43 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
               </div>
 
               <p className="text-sm text-gray-500 mb-3">
-                “{selectedSentence.text.trim()}”
+                “{selectedSpan.text.trim()}”
               </p>
               <div className="mb-3">
                 <span
                   className={`inline-flex items-center px-3 py-1 text-xs font-semibold tracking-wide uppercase rounded-full ${
-                    selectedSentence.level === 'minor'
+                    selectedSpan.severity === 'minor'
                       ? 'bg-[#FEF3C7] text-[#92400E]'
                       : 'bg-[#FEE2E2] text-[#991B1B]'
                   }`}
                 >
-                  {labelForLevel(selectedSentence.level)}
+                  {labelForSeverity(selectedSpan.severity)}
                 </span>
               </div>
 
-              <p className="text-sm text-gray-800 mb-4">
-                {PLACEHOLDER_CONTENT[selectedSentence.level].analysis}
-              </p>
+              <p className="text-sm text-gray-800 mb-4">{selectedSpan.message}</p>
 
-              {PLACEHOLDER_CONTENT[selectedSentence.level].suggestions.length >
-                0 && (
+              {selectedSpan.suggestions.length > 0 && (
                 <>
                   <p className="text-xs font-semibold tracking-wide text-gray-500 mb-2 uppercase">
                     Try one of these rewrites:
                   </p>
                   <div className="flex flex-col gap-2">
-                    {PLACEHOLDER_CONTENT[selectedSentence.level].suggestions.map(
-                      (sug, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => handleSuggestionClick(sug)}
-                          className="w-full text-left text-sm border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors"
-                        >
-                          {sug}
-                        </button>
-                      )
-                    )}
+                    {selectedSpan.suggestions.map((sug) => (
+                      <button
+                        key={sug.id}
+                        type="button"
+                        onClick={() => handleSuggestionClick(sug)}
+                        className="w-full text-left text-sm border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50 transition-colors"
+                      >
+                        {sug.text}
+                        {sug.rationale && (
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            {sug.rationale}
+                          </div>
+                        )}
+                      </button>
+                    ))}
                   </div>
                 </>
               )}
