@@ -120,6 +120,12 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const requestCounterRef = useRef(0);
   const idleTimerRef = useRef<number | null>(null);
+  const initialStateRef = useRef({
+    title: existingPost?.title ?? '',
+    text: existingPost?.caption ?? '',
+    images: existingPost?.images ?? [],
+  });
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -130,6 +136,19 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   }, []);
 
   if (!isOpen) return null;
+
+  const isDirty = () => {
+    const init = initialStateRef.current;
+    const imagesChanged =
+      imagePreviewUrls.length !== init.images.length ||
+      imagePreviewUrls.some((img, idx) => img !== init.images[idx]);
+
+    return (
+      title.trim() !== init.title.trim() ||
+      text.trim() !== init.text.trim() ||
+      imagesChanged
+    );
+  };
 
   const scheduleAnalysis = () => {
     if (idleTimerRef.current) {
@@ -229,15 +248,13 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     setCurrentImageIndex(0);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const savePost = () => {
     const trimmedTitle = title.trim();
     const trimmedText = text.trim();
 
     if (!trimmedTitle && !trimmedText && imagePreviewUrls.length === 0) {
       alert('Please add a title, caption, or at least one image before saving.');
-      return;
+      return false;
     }
 
     onSave({
@@ -246,6 +263,12 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       images: imagePreviewUrls,
       files,
     });
+    return true;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    savePost();
   };
 
   const canSave = !!title.trim() || !!text.trim() || imagePreviewUrls.length > 0;
@@ -311,12 +334,20 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
   const fragments = hasAnalysis ? buildFragments(text, spans) : [];
 
+  const handleAttemptClose = () => {
+    if (isDirty()) {
+      setShowUnsavedModal(true);
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleAttemptClose}
       ></div>
 
       {/* Modal Content */}
@@ -325,7 +356,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       >
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={handleAttemptClose}
           className="absolute top-6 right-6 z-10 p-2 rounded-full hover:bg-black/5 transition-colors"
         >
           <X className="w-6 h-6 text-gray-500" />
@@ -360,6 +391,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                   value={text}
                   onChange={handleTextChange}
                   onBlur={handleCaptionBlur}
+                  spellCheck={false}
                   className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93] px-4 py-4"
                 ></textarea>
               )}
@@ -544,6 +576,55 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Unsaved changes modal */}
+      {showUnsavedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setShowUnsavedModal(false)}
+          />
+          <div className={`${THEME.card} relative w-full max-w-sm rounded-2xl shadow-xl p-6`}>
+            <h3 className="text-lg font-semibold text-[#4A4238] mb-2">
+              Unsaved changes
+            </h3>
+            <p className="text-sm text-[#6B6359] mb-6">
+              You have unsaved edits. What would you like to do?
+            </p>
+            <div className="flex justify-end gap-2 flex-nowrap">
+              <button
+                type="button"
+                className="px-4 py-2 text-sm rounded-full border border-[#D1CBC1] text-[#6B6359] hover:bg-[#E6E2D8] transition-colors whitespace-nowrap"
+                onClick={() => setShowUnsavedModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 text-sm rounded-full border border-[#D1CBC1] text-[#6B6359] hover:bg-[#E6E2D8] transition-colors whitespace-nowrap"
+                onClick={() => {
+                  setShowUnsavedModal(false);
+                  onClose();
+                }}
+              >
+                Exit without saving
+              </button>
+              <button
+                type="button"
+                className={`px-4 py-2 text-sm rounded-full text-white whitespace-nowrap ${THEME.accent} ${THEME.accentHover}`}
+                onClick={() => {
+                  const saved = savePost();
+                  if (saved) {
+                    setShowUnsavedModal(false);
+                  }
+                }}
+              >
+                Save & exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
