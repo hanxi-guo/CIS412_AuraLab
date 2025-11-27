@@ -38,6 +38,7 @@ npm run build
   ```
 - Run the server (defaults to port 8000):
   ```bash
-  uvicorn app.main:app --app-dir backend/app --reload --port 8000
+  cd backend
+  python3 -m uvicorn app.main:app --reload --port 8000
   ```
 - Media is stored under `backend/storage/media`, SQLite DB at `backend/storage/aura.db`.

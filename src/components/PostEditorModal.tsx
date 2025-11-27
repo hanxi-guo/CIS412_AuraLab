@@ -27,15 +27,16 @@ interface PostEditorModalProps {
   existingPost?: Post | null;
 }
 
-const colorForSeverity = (level: Severity): string => {
-  if (level === 'minor') return '#f59e0b';
-  return '#dc2626';
+// TipTap-style highlight colors
+const bgForSeverity = (level: Severity, hovered: boolean = false): string => {
+  if (level === 'minor') {
+    // Standard orange
+    return hovered ? 'rgba(255, 165, 0, 0.9)' : 'rgba(255, 165, 0, 0.6)';
+  }
+  // Red/pink for major issues
+  return hovered ? 'rgba(254, 202, 202, 0.9)' : 'rgba(254, 202, 202, 0.6)';
 };
 
-const bgForSeverity = (level: Severity): string => {
-  if (level === 'minor') return 'rgba(245, 158, 11, 0.15)';
-  return 'rgba(220, 38, 38, 0.12)';
-};
 
 const labelForSeverity = (level: Severity): string =>
   level === 'minor' ? 'Minor issue' : level === 'major' ? 'Major issue' : 'Blocker';
@@ -113,7 +114,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('instagram');
 
   const [hasAnalysis, setHasAnalysis] = useState(false);
-  const [spans, setSpans] = useState<MappedSpan[]>([]);
+  const [rawSpans, setRawSpans] = useState<AnalysisSpan[]>([]); // Original spans from API
   const [hoveredSpanId, setHoveredSpanId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -126,6 +127,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     images: existingPost?.images ?? [],
   });
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isClickingSpanRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -163,7 +166,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const trimmed = text.trim();
     if (!trimmed) {
       setHasAnalysis(false);
-      setSpans([]);
+      setRawSpans([]);
       setSelectedSpanId(null);
       return;
     }
@@ -192,9 +195,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
         return;
       }
 
-      const mapped = mapSpansToRanges(trimmed, res.spans || []);
-      setSpans(mapped);
-      setHasAnalysis(mapped.length > 0);
+      // Save raw spans (will be mapped to positions on each render)
+      const spans = res.spans || [];
+      setRawSpans(spans);
+      setHasAnalysis(spans.length > 0);
       setSelectedSpanId(null);
     } catch (err) {
       if (reqId !== requestCounterRef.current) {
@@ -202,7 +206,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       }
       setAnalysisError((err as Error).message);
       setHasAnalysis(false);
-      setSpans([]);
+      setRawSpans([]);
     } finally {
       if (reqId === requestCounterRef.current) {
         setIsAnalyzing(false);
@@ -288,14 +292,26 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     }
     setText(value.slice(0, MAX_CAPTION_LENGTH));
 
-    setHasAnalysis(false);
-    setSpans([]);
-    setHoveredSpanId(null);
+    // Don't clear analysis immediately - let it stay visible while typing
+    // Only clear the selected span popup if text changed
     setSelectedSpanId(null);
+    
+    // Schedule new analysis (will update highlights when complete)
     scheduleAnalysis();
   };
 
+  const handleCaptionFocus = () => {
+    // Run analysis when user clicks into the text area (if there's text and no analysis yet)
+    if (text.trim() && !hasAnalysis && !isAnalyzing) {
+      runAnalysis();
+    }
+  };
+
   const handleCaptionBlur = () => {
+    // Don't run analysis if we're clicking on a span
+    if (isClickingSpanRef.current) {
+      return;
+    }
     if (idleTimerRef.current) {
       window.clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
@@ -303,20 +319,27 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     runAnalysis();
   };
 
-  const handleHighlightedClick = () => {
-    setHasAnalysis(false);
-    setHoveredSpanId(null);
-    setSelectedSpanId(null);
+  const handleSpanMouseDown = (e: React.MouseEvent<HTMLSpanElement>) => {
+    // Prevent textarea blur when clicking on a span
+    e.preventDefault();
+    isClickingSpanRef.current = true;
   };
 
   const handleSpanClick = (e: React.MouseEvent<HTMLSpanElement>, spanId: string) => {
     e.stopPropagation();
+    e.preventDefault();
     setSelectedSpanId(spanId);
+    // Reset the flag
+    isClickingSpanRef.current = false;
   };
+
+  // Map raw spans to positions in current text (recalculated on each render)
+  const mappedSpans = hasAnalysis ? mapSpansToRanges(text, rawSpans) : [];
+  const fragments = hasAnalysis ? buildFragments(text, mappedSpans) : [];
 
   const selectedSpan =
     selectedSpanId !== null
-      ? spans.find((s) => s.id === selectedSpanId) ?? null
+      ? mappedSpans.find((s) => s.id === selectedSpanId) ?? null
       : null;
 
   const handleSuggestionClick = (suggestion: AnalysisSuggestion) => {
@@ -328,11 +351,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     setText(updatedText);
     setSelectedSpanId(null);
     setHasAnalysis(false);
-    setSpans([]);
+    setRawSpans([]);
     scheduleAnalysis();
   };
-
-  const fragments = hasAnalysis ? buildFragments(text, spans) : [];
 
   const handleAttemptClose = () => {
     if (isDirty()) {
@@ -384,22 +405,34 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
           {/* Text Area + Highlighted Spans */}
           <div className="flex-1 mb-6 min-h-[200px]">
-            <div className="relative w-full h-full border-2 border-[#D1CBC1] rounded-2xl bg-white">
-              {!hasAnalysis && (
-                <textarea
-                  placeholder="Text"
-                  value={text}
-                  onChange={handleTextChange}
-                  onBlur={handleCaptionBlur}
-                  spellCheck={false}
-                  className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93] px-4 py-4"
-                ></textarea>
-              )}
+            <div className="relative w-full h-full border-2 border-[#D1CBC1] rounded-2xl bg-white overflow-hidden">
+              {/* Textarea - always visible and editable */}
+              <textarea
+                ref={textareaRef}
+                placeholder="Text"
+                value={text}
+                onChange={handleTextChange}
+                onFocus={handleCaptionFocus}
+                onBlur={handleCaptionBlur}
+                spellCheck={false}
+                className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93] px-4 py-4 bg-transparent relative z-10 border-0 rounded-2xl"
+                style={{
+                  color: hasAnalysis ? 'transparent' : 'inherit',
+                  caretColor: '#4A4238',
+                }}
+              ></textarea>
 
+              {/* Highlight overlay - only visible when hasAnalysis is true */}
               {hasAnalysis && (
                 <div
-                  className="absolute inset-0 px-4 py-4 text-lg whitespace-pre-wrap overflow-auto cursor-text"
-                  onClick={handleHighlightedClick}
+                  className="absolute inset-0 px-4 py-4 text-lg whitespace-pre-wrap overflow-auto pointer-events-none"
+                  style={{
+                    zIndex: 20,
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    fontSize: '1.125rem', // text-lg = 18px
+                    lineHeight: '1.75rem', // text-lg default line-height = 28px
+                    letterSpacing: 'normal',
+                  }}
                 >
                   {fragments.map((frag) =>
                     frag.span ? (
@@ -407,23 +440,29 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                         key={frag.key}
                         onMouseEnter={() => setHoveredSpanId(frag.span?.id ?? null)}
                         onMouseLeave={() => setHoveredSpanId(null)}
-                        onClick={(e) => handleSpanClick(e, frag.span?.id ?? '')}
+                        onMouseDown={handleSpanMouseDown}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSpanClick(e, frag.span?.id ?? '');
+                        }}
                         style={{
-                          textDecorationLine: 'underline',
-                          textDecorationStyle: 'wavy',
-                          textDecorationColor: colorForSeverity(frag.span.severity),
-                          backgroundColor:
+                          // TipTap-style background highlight
+                          backgroundColor: bgForSeverity(
+                            frag.span.severity,
                             hoveredSpanId === frag.span.id
-                              ? bgForSeverity(frag.span.severity)
-                              : 'transparent',
+                          ),
+                          borderRadius: '3px',
+                          boxDecorationBreak: 'clone',
+                          WebkitBoxDecorationBreak: 'clone',
                           transition: 'background-color 120ms ease-out',
                           cursor: 'pointer',
+                          pointerEvents: 'auto',
                         }}
                       >
                         {frag.text}
                       </span>
                     ) : (
-                      <span key={frag.key}>{frag.text}</span>
+                      <span key={frag.key} style={{ pointerEvents: 'none' }}>{frag.text}</span>
                     )
                   )}
                 </div>
@@ -532,7 +571,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
               </div>
 
               <p className="text-sm text-gray-500 mb-3">
-                “{selectedSpan.text.trim()}”
+                "{selectedSpan.text.trim()}"
               </p>
               <div className="mb-3">
                 <span

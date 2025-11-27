@@ -69,13 +69,35 @@ def get_post(post_id: str, session: Session = Depends(get_session)):
 
 
 @router.put("/posts/{post_id}", response_model=PostOut)
-def update_post(
-    post_id: str, payload: PostUpdate, session: Session = Depends(get_session)
-):
+async def update_post(
+    post_id: str,
+    title: Optional[str] = Form(default=None),
+    caption: Optional[str] = Form(default=None),
+    platform: Optional[str] = Form(default=None),
+    status: Optional[str] = Form(default=None),
+    scheduled_at: Optional[str] = Form(default=None),
+    published_at: Optional[str] = Form(default=None),
+    media: List[UploadFile] = File(default=[]),
+    session: Session = Depends(get_session),
+):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     """Update post fields."""
     post = post_service.get_post(session, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+
+    media_payload = None
+    if media and len(media) > 0 and media[0].filename:
+        media_payload = await storage.save_uploads(post.campaign_id, media)
+
+    payload = PostUpdate(
+        title=title,
+        caption=caption,
+        platform=platform,
+        status=status,
+        scheduled_at=datetime.fromisoformat(scheduled_at) if scheduled_at else None,
+        published_at=datetime.fromisoformat(published_at) if published_at else None,
+        media=media_payload,
+    )
     updated = post_service.update_post(session, post, payload)
     return post_service.post_with_media(session, updated)
 

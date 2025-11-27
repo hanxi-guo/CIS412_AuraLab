@@ -72,6 +72,7 @@ const App: React.FC = () => {
           title: data.title,
           caption: data.text,
           platform: 'instagram',
+          files: data.files,
         });
         setCampaigns((prev) =>
           prev.map((c) =>
@@ -89,6 +90,7 @@ const App: React.FC = () => {
           caption: data.text,
           platform: 'instagram',
           status: 'draft',
+          files: data.files,
         });
         setCampaigns((prev) =>
           prev.map((c) =>

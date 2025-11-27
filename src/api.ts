@@ -75,7 +75,10 @@ const mapPost = (post: ApiPost): Post => ({
   id: post.id,
   title: post.title ?? '',
   caption: post.caption ?? '',
-  images: (post.media ?? []).map((m) => m.url),
+  images: (post.media ?? []).map((m) => {
+    const baseUrl = API_BASE.replace('/api', '');
+    return m.url.startsWith('/') ? `${baseUrl}${m.url}` : m.url;
+  }),
 });
 
 const mapCampaign = (apiCampaign: ApiCampaign): Campaign => ({
@@ -148,6 +151,7 @@ interface PostPayload {
   caption?: string;
   platform?: string;
   status?: string;
+  files?: File[];
 }
 
 export async function createPost(
@@ -159,6 +163,12 @@ export async function createPost(
   if (payload.caption !== undefined) form.append('caption', payload.caption);
   if (payload.platform !== undefined) form.append('platform', payload.platform);
   if (payload.status !== undefined) form.append('status', payload.status);
+
+  if (payload.files && payload.files.length > 0) {
+    payload.files.forEach((file) => {
+      form.append('media', file);
+    });
+  }
 
   const res = await fetch(`${API_BASE}/campaigns/${campaignId}/posts`, {
     method: 'POST',
@@ -173,10 +183,27 @@ export async function createPost(
 }
 
 export async function updatePost(id: string, payload: PostPayload): Promise<Post> {
-  const data = await jsonFetch<ApiPost>(`${API_BASE}/posts/${id}`, {
+  const form = new FormData();
+  if (payload.title !== undefined) form.append('title', payload.title);
+  if (payload.caption !== undefined) form.append('caption', payload.caption);
+  if (payload.platform !== undefined) form.append('platform', payload.platform);
+  if (payload.status !== undefined) form.append('status', payload.status);
+
+  if (payload.files && payload.files.length > 0) {
+    payload.files.forEach((file) => {
+      form.append('media', file);
+    });
+  }
+
+  const res = await fetch(`${API_BASE}/posts/${id}`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
+    body: form,
   });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`${res.status} ${res.statusText}: ${detail || 'request failed'}`);
+  }
+  const data: ApiPost = await res.json();
   return mapPost(data);
 }
 

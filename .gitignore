@@ -14,9 +14,26 @@ dist-ssr
 
 # Python / backend
 backend/.venv/
+backend/venv/
+backend/env/
 backend/storage/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +45,6 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# Old versions / backups
+milo_version/
