@@ -65,6 +65,26 @@ const mapSpansToRanges = (text: string, spans: AnalysisSpan[]): MappedSpan[] => 
   };
 
   spans.forEach((span) => {
+    const startOffset = span.start_offset;
+    const endOffset = span.end_offset;
+    if (
+      typeof startOffset === 'number' &&
+      typeof endOffset === 'number' &&
+      startOffset >= 0 &&
+      endOffset > startOffset &&
+      endOffset <= text.length &&
+      !overlaps(startOffset, endOffset)
+    ) {
+      used.push([startOffset, endOffset]);
+      results.push({
+        ...span,
+        severity: (span.severity as Severity) || 'minor',
+        start: startOffset,
+        end: endOffset,
+      });
+      return;
+    }
+
     const slot = findSlot(span.text || '');
     if (!slot) return;
     results.push({
@@ -585,7 +605,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 </span>
               </div>
 
-              <p className="text-sm text-gray-800 mb-4">{selectedSpan.message}</p>
+              <p className="text-sm text-gray-800 mb-4">{selectedSpan.comment}</p>
 
               {selectedSpan.suggestions.length > 0 && (
                 <>

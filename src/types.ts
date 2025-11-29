@@ -53,14 +53,14 @@ export interface AnalysisSuggestion {
   id: string;
   text: string;
   rationale?: string;
-  confidence?: number;
-  style?: string;
 }
 
 export interface AnalysisSpan {
   id: string;
   text: string;
   severity: 'minor' | 'major' | 'blocker';
-  message: string;
+  comment: string;
+  start_offset?: number | null;
+  end_offset?: number | null;
   suggestions: AnalysisSuggestion[];
 }

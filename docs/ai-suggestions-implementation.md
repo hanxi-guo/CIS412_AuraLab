@@ -21,8 +21,8 @@ Purpose: implement the AI-powered span highlighting and rewrite suggestions desc
 - **Span text instead of offsets**: spans carry a `text` field (the exact highlighted substring). If multiple identical substrings exist, the client should use the first occurrence not already claimed by a previous span (no need to implement the selection logic server-side now).
 - **Persistence**:
   - `post_analysis`: `status` (`pending|running|complete|failed`), `error` (nullable), `model`, `prompt_version`, timestamps.
-  - `analysis_spans`: `analysis_id`, `start_offset`, `end_offset`, `text`, `severity`, `category`, `message`.
-  - `analysis_suggestions`: `span_id`, `text`, `rationale`, `confidence`, `style`.
+- `analysis_spans`: `analysis_id`, `start_offset`, `end_offset`, `text`, `severity`, `category`, `comment`.
+  - `analysis_suggestions`: `span_id`, `text`, `rationale`.
   - Use a transaction when writing spans/suggestions to keep referential integrity.
 - **Staleness**: if `posts.updated_at` changes after enqueue, allow job to complete but include `post_updated_after_snapshot` boolean in the poll response so the client can ignore stale results.
 
@@ -46,13 +46,11 @@ Purpose: implement the AI-powered span highlighting and rewrite suggestions desc
     {
       "text": "You won't believe our new drop!",
       "severity": "major",
-      "message": "CTA is vague; focus on the benefit.",
+      "comment": "CTA is vague; focus on the benefit.",
       "suggestions": [
         {
           "text": "Preview the new fall drop designed for weekend trips.",
-          "rationale": "Names the drop and use-case.",
-          "confidence": 0.62,
-          "style": "more concrete"
+          "rationale": "Names the drop and use-case."
         }
       ]
     }

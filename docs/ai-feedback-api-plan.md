@@ -8,8 +8,8 @@
 - `campaign` (existing concept): `id`, `name`, `brief.overview`, `brief.target_audience`, `brief.brand_voice[]`, `brief.guardrails`.
 - `post`: `id` (uuid), `campaign_id`, `title`, `caption`, `media[]` (urls or storage ids), `platform` (enum), `status` (draft/published), timestamps.
 - `post_analysis`: `id` (uuid), `post_id`, `status` (pending/running/complete/failed), `source` (ai/human), `model`, `prompt_version`, `input_snapshot` (caption, title, platform, brand voice, guardrails, target audience), timestamps, `error`.
-- `analysis_span`: `id` (uuid), `analysis_id`, `text` (the exact span to highlight), `severity` (minor/major/blocker), `message` (short rationale), `suggestion_ids[]`. If multiple identical spans exist, default to the first occurrence not already used by a prior span (client-side selection; server just returns the text).
-- `suggestion`: `id` (uuid), `span_id`, `text` (replacement), `rationale`, `confidence` (0-1), optional `style` (short tag like “friendlier”, “more concise”).
+- `analysis_span`: `id` (uuid), `analysis_id`, `text` (the exact span to highlight), `severity` (minor/major/blocker), `comment` (short rationale), `suggestion_ids[]`. If multiple identical spans exist, default to the first occurrence not already used by a prior span (client-side selection; server just returns the text).
+- `suggestion`: `id` (uuid), `span_id`, `text` (replacement), `rationale`.
 - Notes:
   - Offsets allow the frontend to render wavy underlines over arbitrary spans (not just sentence boundaries).
   - Store the `input_snapshot` so the analysis can be audited even if the post later changes.
@@ -31,14 +31,12 @@
           "span_id": "uuid",
           "text": "You won't believe our new drop!",
           "severity": "major",
-          "message": "CTA is vague; focus on the benefit.",
+          "comment": "CTA is vague; focus on the benefit.",
           "suggestions": [
             {
               "suggestion_id": "uuid",
               "text": "Preview the new fall drop designed for weekend trips.",
-              "rationale": "Names the drop and the use-case.",
-              "confidence": 0.62,
-              "style": "more concrete"
+              "rationale": "Names the drop and the use-case."
             }
           ]
         }
@@ -52,6 +50,6 @@
 
 ## Frontend Integration Notes
 - Replace the random client-side analysis with a call to `POST /api/posts/:id/analysis`, then poll `GET .../analysis/:analysisId` until complete.
-- The editor can map `severity` to the existing underline colors; use `start_offset`/`end_offset` to wrap spans and open the overlay populated from `spans[].message` and `spans[].suggestions`.
+- The editor can map `severity` to the existing underline colors; use `start_offset`/`end_offset` to wrap spans and open the overlay populated from `spans[].comment` and `spans[].suggestions`.
 - When a suggestion is applied in the UI, the client should update the caption locally and optionally `PUT /api/posts/:id` followed by a fresh analysis trigger.
 - Preserve `analysis_id` in state so the overlay reflects the same version the underlines came from; discard spans if the caption changes locally before the analysis returns.

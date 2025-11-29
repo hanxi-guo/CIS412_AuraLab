@@ -149,8 +149,6 @@ class AnalysisSuggestion(BaseModel):
     id: str
     text: str
     rationale: Optional[str] = None
-    confidence: Optional[float] = None
-    style: Optional[str] = None
 
 
 class AnalysisSpan(BaseModel):
@@ -158,7 +156,9 @@ class AnalysisSpan(BaseModel):
     id: str
     text: str
     severity: str
-    message: str
+    comment: str
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
     suggestions: List[AnalysisSuggestion]
 
 

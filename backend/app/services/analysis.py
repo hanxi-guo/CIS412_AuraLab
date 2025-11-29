@@ -76,31 +76,76 @@ def _clear_spans(session: Session, analysis_id: str) -> None:
     session.exec(stmt_spans)  # type: ignore[arg-type]
 
 
+def _span_offsets(text: str, spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Compute non-overlapping offsets for spans based on text matching."""
+    used: List[tuple[int, int]] = []
+
+    def overlaps(start: int, end: int) -> bool:
+        return any(not (end <= s or start >= e) for s, e in used)
+
+    def find_slot(needle: str) -> Optional[tuple[int, int]]:
+        if not needle:
+            return None
+        idx = 0
+        while idx < len(text):
+            found = text.find(needle, idx)
+            if found == -1:
+                return None
+            end = found + len(needle)
+            if not overlaps(found, end):
+                used.append((found, end))
+                return (found, end)
+            idx = found + 1
+        return None
+
+    results: List[Dict[str, Any]] = []
+    for span in spans:
+        start = span.get("start_offset")
+        end = span.get("end_offset")
+        # Use provided offsets if valid
+        if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(text):
+            used.append((start, end))
+            span_with_offsets = {**span, "start_offset": start, "end_offset": end}
+            results.append(span_with_offsets)
+            continue
+
+        slot = find_slot(span.get("text", "") or "")
+        if slot:
+            results.append({**span, "start_offset": slot[0], "end_offset": slot[1]})
+        else:
+            results.append({**span, "start_offset": None, "end_offset": None})
+    return results
+
+
 def _persist_result(session: Session, analysis: PostAnalysis, data: Dict[str, Any]) -> None:
     _clear_spans(session, analysis.id)
     spans_payload = data.get("spans", []) or []
+    caption = ""
+    if isinstance(analysis.input_snapshot, dict):
+        caption = analysis.input_snapshot.get("caption") or ""
+    spans_with_offsets = _span_offsets(caption, spans_payload)
 
-    for span in spans_payload:
+    for span in spans_with_offsets:
         span_row = AnalysisSpan(
             analysis_id=analysis.id,
             text=span.get("text", ""),
             severity=span.get("severity", "minor"),
-            message=span.get("message", ""),
+            comment=span.get("comment") or span.get("message", ""),
+            start_offset=span.get("start_offset"),
+            end_offset=span.get("end_offset"),
         )
         session.add(span_row)
         session.commit()
         session.refresh(span_row)
 
         for sug in span.get("suggestions", []) or []:
-            session.add(
-                AnalysisSuggestion(
-                    span_id=span_row.id,
-                    text=sug.get("text", ""),
-                    rationale=sug.get("rationale"),
-                    confidence=sug.get("confidence"),
-                    style=sug.get("style"),
+                session.add(
+                    AnalysisSuggestion(
+                        span_id=span_row.id,
+                        text=sug.get("text", ""),
+                        rationale=sug.get("rationale"),
+                    )
                 )
-            )
     analysis.status = "complete"
     analysis.model = data.get("model")
     analysis.prompt_version = data.get("prompt_version")
@@ -162,18 +207,18 @@ def _analysis_out(session: Session, analysis: PostAnalysis) -> AnalysisOut:
                 id=s.id,
                 text=s.text,
                 severity=s.severity,
-                message=s.message,
+                comment=s.comment,
+                start_offset=s.start_offset,
+                end_offset=s.end_offset,
                 suggestions=[
-                    AnalysisSuggestionSchema(
-                        id=sug.id,
-                        text=sug.text,
-                        rationale=sug.rationale,
-                        confidence=sug.confidence,
-                        style=sug.style,
-                    )
-                    for sug in suggestions_by_span.get(s.id, [])
-                ],
-            )
+                AnalysisSuggestionSchema(
+                    id=sug.id,
+                    text=sug.text,
+                    rationale=sug.rationale,
+                )
+                for sug in suggestions_by_span.get(s.id, [])
+            ],
+        )
         )
 
     post = session.get(Post, analysis.post_id)
@@ -190,25 +235,30 @@ def _analysis_out(session: Session, analysis: PostAnalysis) -> AnalysisOut:
 
 
 def _draft_out(raw: Dict[str, Any]) -> AnalysisOut:
-    spans_payload = [
-        AnalysisSpanSchema(
-            id=s.get("id") or str(uuid4()),
-            text=s.get("text", ""),
-            severity=s.get("severity", "minor"),
-            message=s.get("message", ""),
-            suggestions=[
+    spans_payload_raw = raw.get("spans") or []
+    caption = (raw.get("input_snapshot") or {}).get("caption", "") if isinstance(raw, dict) else ""
+    spans_with_offsets = _span_offsets(caption, spans_payload_raw) if isinstance(caption, str) else spans_payload_raw
+    spans_payload = []
+    for s in spans_with_offsets:
+        spans_payload.append(
+            AnalysisSpanSchema(
+                id=s.get("id") or str(uuid4()),
+                text=s.get("text", ""),
+                severity=s.get("severity", "minor"),
+                comment=s.get("comment") or s.get("message", ""),
+                start_offset=s.get("start_offset"),
+                end_offset=s.get("end_offset"),
+                suggestions=[
                 AnalysisSuggestionSchema(
                     id=sg.get("id") or str(uuid4()),
                     text=sg.get("text", ""),
                     rationale=sg.get("rationale"),
-                    confidence=sg.get("confidence"),
-                    style=sg.get("style"),
                 )
                 for sg in (s.get("suggestions") or [])
             ],
         )
-        for s in (raw.get("spans") or [])
-    ]
+        )
+
     return AnalysisOut(
         analysis_id=str(uuid4()),
         status="complete",
@@ -219,7 +269,9 @@ def _draft_out(raw: Dict[str, Any]) -> AnalysisOut:
 
 def run_draft(snapshot: Dict[str, Any]) -> AnalysisOut:
     result = generate_feedback(snapshot)
-    return _draft_out(result)
+    # Attach snapshot so offsets can be computed
+    result_with_snapshot = {**result, "input_snapshot": snapshot}
+    return _draft_out(result_with_snapshot)
 
 
 def get_analysis(session: Session, post_id: str, analysis_id: str) -> Optional[AnalysisOut]:

@@ -76,7 +76,9 @@ class AnalysisSpan(SQLModel, table=True):
     analysis_id: str = Field(foreign_key="postanalysis.id", index=True)
     text: str
     severity: str
-    message: str
+    comment: str
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
 
 
 class AnalysisSuggestion(SQLModel, table=True):
@@ -85,5 +87,3 @@ class AnalysisSuggestion(SQLModel, table=True):
     span_id: str = Field(foreign_key="analysisspan.id", index=True)
     text: str
     rationale: Optional[str] = None
-    confidence: Optional[float] = None
-    style: Optional[str] = None
