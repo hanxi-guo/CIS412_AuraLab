@@ -362,6 +362,10 @@ const App: React.FC = () => {
                       <h2 className="text-sm font-semibold tracking-wide uppercase text-[#8C857B]">
                         Campaign Brief
                       </h2>
+                      <p className="mt-1 text-xs text-[#8C857B]">
+                        These fields help the AI tailor its feedback and draft suggestions for posts in this
+                        campaign.
+                      </p>
                     </div>
                   </div>
 
@@ -500,7 +504,7 @@ const App: React.FC = () => {
                   return (
                     <div
                       key={post.id}
-                      className={`${THEME.card} relative p-3 rounded-[2rem] shadow-sm hover:shadow-md transition-shadow`}
+                      className={`${THEME.card} relative p-3 rounded-[2rem] shadow-sm hover:shadow-md transition-shadow flex flex-col`}
                     >
                       {/* top-right delete button, separated from image */}
                       <div className="flex justify-end mb-1">
@@ -529,9 +533,9 @@ const App: React.FC = () => {
                           setEditingPost(post);
                           setIsModalOpen(true);
                         }}
-                        className="block text-left w-full"
+                        className="block text-left w-full flex-1 flex flex-col"
                       >
-                        <div className="aspect-square rounded-[1.5rem] overflow-hidden mb-4 bg-gray-100 flex items-center justify-center">
+                        <div className="aspect-square rounded-[1.5rem] overflow-hidden mb-3 bg-gray-100 flex items-center justify-center">
                           {hasImages ? (
                             <img
                               src={post.images[0]}
@@ -544,17 +548,30 @@ const App: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <h3
-                          className={`text-xl font-semibold ${THEME.textMain} px-2 pb-1 truncate`}
-                          title={post.title || 'Untitled post'}
-                        >
-                          {post.title || 'Untitled post'}
-                        </h3>
-                        {post.caption && (
-                          <p className="text-sm text-[#6B6359] px-2 pb-2 line-clamp-2 break-words">
-                            {post.caption}
-                          </p>
-                        )}
+                        <div className="px-2 pb-2">
+                          <h3
+                            className={`text-lg font-semibold ${THEME.textMain} pb-1 line-clamp-2 leading-tight`}
+                            title={post.title || 'Untitled post'}
+                          >
+                            {post.title || 'Untitled post'}
+                          </h3>
+                          {post.caption && (
+                            <p 
+                              className="text-sm text-[#6B6359] leading-relaxed"
+                              style={{
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                wordBreak: 'break-word',
+                              }}
+                              title={post.caption}
+                            >
+                              {post.caption}
+                            </p>
+                          )}
+                        </div>
                       </button>
                     </div>
                   );

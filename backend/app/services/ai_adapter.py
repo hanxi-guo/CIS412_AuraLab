@@ -114,7 +114,8 @@ def _build_messages(snapshot: dict) -> List[Dict[str, str]]:
     caption = snapshot.get("caption", "") or ""
     title = snapshot.get("title") or ""
     platform = snapshot.get("platform") or ""
-    campaign = snapshot.get("campaign") or {}
+    # Support both 'campaign' (from DB) and 'campaign_context' (from draft API)
+    campaign = snapshot.get("campaign") or snapshot.get("campaign_context") or {}
     brand_voice = ", ".join(campaign.get("brand_voice") or []) or "unspecified"
     guardrails = campaign.get("guardrails") or ""
     target_audience = campaign.get("target_audience") or ""
@@ -205,6 +206,15 @@ def generate_feedback(snapshot: dict) -> Dict[str, Any]:
         raise RuntimeError("OPENAI_API_KEY is not set; cannot run analysis")
 
     messages = _build_messages(snapshot)
+    
+    # Debug logging
+    campaign = snapshot.get("campaign") or snapshot.get("campaign_context") or {}
+    guardrails = campaign.get("guardrails") or ""
+    # print(f"[DEBUG] Snapshot keys: {list(snapshot.keys())}")
+    # print(f"[DEBUG] Campaign data: {campaign}")
+    # print(f"[DEBUG] Guardrails being sent to AI: '{guardrails}'")
+    # print(f"[DEBUG] System prompt preview: {messages[0]['content'][:500]}...")
+    
     try:
         ai_json = chat_json(messages, schema=ANALYSIS_SCHEMA)
         return _parse_ai_result(ai_json)

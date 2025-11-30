@@ -28,13 +28,13 @@ interface PostEditorModalProps {
 }
 
 // TipTap-style highlight colors
-const bgForSeverity = (level: Severity, hovered: boolean = false): string => {
+const bgForSeverity = (level: Severity): string => {
   if (level === 'minor') {
     // Standard orange
-    return hovered ? 'rgba(255, 165, 0, 0.9)' : 'rgba(255, 165, 0, 0.6)';
+    return 'rgba(255, 165, 0, 0.6)';
   }
   // Red/pink for major issues
-  return hovered ? 'rgba(254, 202, 202, 0.9)' : 'rgba(254, 202, 202, 0.6)';
+  return 'rgba(254, 202, 202, 0.6)';
 };
 
 
@@ -67,6 +67,8 @@ const mapSpansToRanges = (text: string, spans: AnalysisSpan[]): MappedSpan[] => 
   spans.forEach((span) => {
     const startOffset = span.start_offset;
     const endOffset = span.end_offset;
+    
+    // Verify that the offset matches the actual text content
     if (
       typeof startOffset === 'number' &&
       typeof endOffset === 'number' &&
@@ -75,16 +77,24 @@ const mapSpansToRanges = (text: string, spans: AnalysisSpan[]): MappedSpan[] => 
       endOffset <= text.length &&
       !overlaps(startOffset, endOffset)
     ) {
-      used.push([startOffset, endOffset]);
-      results.push({
-        ...span,
-        severity: (span.severity as Severity) || 'minor',
-        start: startOffset,
-        end: endOffset,
-      });
-      return;
+      // Check if the text at this offset actually matches what we expect
+      const textAtOffset = text.slice(startOffset, endOffset);
+      const spanText = span.text || '';
+      
+      // If the text matches, use the offset
+      if (textAtOffset === spanText) {
+        used.push([startOffset, endOffset]);
+        results.push({
+          ...span,
+          severity: (span.severity as Severity) || 'minor',
+          start: startOffset,
+          end: endOffset,
+        });
+        return;
+      }
     }
 
+    // If offset doesn't match or isn't available, search for the text
     const slot = findSlot(span.text || '');
     if (!slot) return;
     results.push({
@@ -135,7 +145,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
   const [hasAnalysis, setHasAnalysis] = useState(false);
   const [rawSpans, setRawSpans] = useState<AnalysisSpan[]>([]); // Original spans from API
-  const [hoveredSpanId, setHoveredSpanId] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -148,7 +157,61 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   });
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isClickingSpanRef = useRef(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const lastAnalyzedTextRef = useRef<string>(existingPost?.caption ?? '');
+  const isViewingSpanRef = useRef(false);
+
+  // Undo/Redo state
+  const [textHistory, setTextHistory] = useState<string[]>([existingPost?.caption ?? '']);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modifier && e.key === 'z' && !e.shiftKey) {
+        // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows)
+        e.preventDefault();
+        if (historyIndex > 0) {
+          const newIndex = historyIndex - 1;
+          setHistoryIndex(newIndex);
+          setText(textHistory[newIndex]);
+          closeSpanPopup();
+          setHasAnalysis(false);
+          setRawSpans([]);
+        }
+      } else if (modifier && ((e.shiftKey && e.key === 'z') || e.key === 'y')) {
+        // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows)
+        e.preventDefault();
+        if (historyIndex < textHistory.length - 1) {
+          const newIndex = historyIndex + 1;
+          setHistoryIndex(newIndex);
+          setText(textHistory[newIndex]);
+          closeSpanPopup();
+          setHasAnalysis(false);
+          setRawSpans([]);
+        }
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, historyIndex, textHistory]);
 
   useEffect(() => {
     return () => {
@@ -157,6 +220,22 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       }
     };
   }, []);
+
+  // Sync scroll position between textarea and overlay
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    const overlay = overlayRef.current;
+    
+    if (!textarea || !overlay) return;
+    
+    const handleScroll = () => {
+      overlay.scrollTop = textarea.scrollTop;
+      overlay.scrollLeft = textarea.scrollLeft;
+    };
+    
+    textarea.addEventListener('scroll', handleScroll);
+    return () => textarea.removeEventListener('scroll', handleScroll);
+  }, [hasAnalysis]);
 
   if (!isOpen) return null;
 
@@ -173,10 +252,19 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     );
   };
 
+  // Add to history when making important changes (like AI suggestions)
+  const pushToHistory = (newText: string) => {
+    const newHistory = textHistory.slice(0, historyIndex + 1);
+    newHistory.push(newText);
+    setTextHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
   const scheduleAnalysis = () => {
     if (idleTimerRef.current) {
       window.clearTimeout(idleTimerRef.current);
     }
+    // Longer delay to avoid re-analyzing for minor edits
     idleTimerRef.current = window.setTimeout(() => {
       runAnalysis();
     }, 1200);
@@ -187,7 +275,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     if (!trimmed) {
       setHasAnalysis(false);
       setRawSpans([]);
-      setSelectedSpanId(null);
+      closeSpanPopup();
+      lastAnalyzedTextRef.current = '';
       return;
     }
 
@@ -219,7 +308,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       const spans = res.spans || [];
       setRawSpans(spans);
       setHasAnalysis(spans.length > 0);
-      setSelectedSpanId(null);
+      // Remember the text we just analyzed
+      lastAnalyzedTextRef.current = trimmed;
+      // Don't clear selectedSpanId if user is viewing a span analysis
+      // This prevents the popup from disappearing when background analysis completes
     } catch (err) {
       if (reqId !== requestCounterRef.current) {
         return;
@@ -227,6 +319,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       setAnalysisError((err as Error).message);
       setHasAnalysis(false);
       setRawSpans([]);
+      // Still remember the text even if analysis failed, to avoid retrying on blur
+      lastAnalyzedTextRef.current = trimmed;
     } finally {
       if (reqId === requestCounterRef.current) {
         setIsAnalyzing(false);
@@ -309,15 +403,59 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const value = e.target.value;
     if (value.length > MAX_CAPTION_LENGTH) {
       alert(`Caption cannot exceed ${MAX_CAPTION_LENGTH} characters.`);
+      return; // Don't update if exceeds limit
     }
-    setText(value.slice(0, MAX_CAPTION_LENGTH));
-
-    // Don't clear analysis immediately - let it stay visible while typing
-    // Only clear the selected span popup if text changed
-    setSelectedSpanId(null);
     
-    // Schedule new analysis (will update highlights when complete)
-    scheduleAnalysis();
+    const oldText = text;
+    setText(value);
+
+    // Close span popup if text changed
+    closeSpanPopup();
+    
+    // Only schedule analysis if there's substantial change
+    const isMinorChange = Math.abs(value.length - oldText.length) <= 2;
+    const trimmedOld = oldText.trim().toLowerCase();
+    const trimmedNew = value.trim().toLowerCase();
+    const similarityRatio = trimmedOld.length > 0 
+      ? Math.min(trimmedOld.length, trimmedNew.length) / Math.max(trimmedOld.length, trimmedNew.length)
+      : 0;
+    
+    // Only re-analyze if it's a significant change (not just punctuation/typo)
+    const shouldReanalyze = !isMinorChange || similarityRatio < 0.9;
+    
+    if (shouldReanalyze) {
+      // Significant change - clear old highlights and schedule new analysis
+      setHasAnalysis(false);
+      setRawSpans([]);
+      scheduleAnalysis();
+    }
+    // For minor changes, keep highlights visible - they're still mostly accurate
+  };
+
+  const handleCaptionClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (!hasAnalysis || mappedSpans.length === 0) return;
+    
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    // Get cursor position
+    const cursorPos = textarea.selectionStart;
+    
+    // Find if cursor is within any span
+    const clickedSpan = mappedSpans.find(
+      span => cursorPos >= span.start && cursorPos <= span.end
+    );
+    
+    if (clickedSpan) {
+      e.preventDefault();
+      // Cancel any pending analysis when user clicks to view span details
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      isViewingSpanRef.current = true;
+      setSelectedSpanId(clickedSpan.id);
+    }
   };
 
   const handleCaptionFocus = () => {
@@ -328,30 +466,22 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   };
 
   const handleCaptionBlur = () => {
-    // Don't run analysis if we're clicking on a span
-    if (isClickingSpanRef.current) {
+    // Don't run analysis if user is viewing span details popup
+    if (isViewingSpanRef.current) {
       return;
     }
+    
     if (idleTimerRef.current) {
       window.clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
     }
-    runAnalysis();
+    
+    // Only run analysis if text has actually changed since last analysis
+    if (text.trim() !== lastAnalyzedTextRef.current.trim()) {
+      runAnalysis();
+    }
   };
 
-  const handleSpanMouseDown = (e: React.MouseEvent<HTMLSpanElement>) => {
-    // Prevent textarea blur when clicking on a span
-    e.preventDefault();
-    isClickingSpanRef.current = true;
-  };
-
-  const handleSpanClick = (e: React.MouseEvent<HTMLSpanElement>, spanId: string) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setSelectedSpanId(spanId);
-    // Reset the flag
-    isClickingSpanRef.current = false;
-  };
 
   // Map raw spans to positions in current text (recalculated on each render)
   const mappedSpans = hasAnalysis ? mapSpansToRanges(text, rawSpans) : [];
@@ -362,14 +492,27 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       ? mappedSpans.find((s) => s.id === selectedSpanId) ?? null
       : null;
 
+  const closeSpanPopup = () => {
+    setSelectedSpanId(null);
+    isViewingSpanRef.current = false;
+  };
+
   const handleSuggestionClick = (suggestion: AnalysisSuggestion) => {
     if (!selectedSpan) return;
+    
+    // Save current state to history before applying suggestion
+    pushToHistory(text);
+    
     const updatedText =
       text.slice(0, selectedSpan.start) +
       suggestion.text +
       text.slice(selectedSpan.end);
     setText(updatedText);
-    setSelectedSpanId(null);
+    
+    // Update history with new text
+    pushToHistory(updatedText);
+    
+    closeSpanPopup();
     setHasAnalysis(false);
     setRawSpans([]);
     scheduleAnalysis();
@@ -432,51 +575,56 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 placeholder="Text"
                 value={text}
                 onChange={handleTextChange}
+                onClick={handleCaptionClick}
                 onFocus={handleCaptionFocus}
                 onBlur={handleCaptionBlur}
                 spellCheck={false}
-                className="w-full h-full resize-none focus:outline-none text-lg placeholder-[#A39D93] px-4 py-4 bg-transparent relative z-10 border-0 rounded-2xl"
+                className="w-full h-full resize-none focus:outline-none placeholder-[#A39D93] bg-transparent relative z-10 border-0 rounded-2xl"
                 style={{
                   color: hasAnalysis ? 'transparent' : 'inherit',
                   caretColor: '#4A4238',
+                  padding: '1rem',
+                  fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '1.125rem',
+                  lineHeight: '1.75rem',
+                  letterSpacing: 'normal',
+                  wordSpacing: 'normal',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word',
                 }}
               ></textarea>
 
               {/* Highlight overlay - only visible when hasAnalysis is true */}
               {hasAnalysis && (
                 <div
-                  className="absolute inset-0 px-4 py-4 text-lg whitespace-pre-wrap overflow-auto pointer-events-none"
+                  ref={overlayRef}
+                  className="absolute inset-0 pointer-events-none overflow-hidden"
                   style={{
-                    zIndex: 20,
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    fontSize: '1.125rem', // text-lg = 18px
-                    lineHeight: '1.75rem', // text-lg default line-height = 28px
+                    zIndex: 5,
+                    padding: '1rem',
+                    fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '1.125rem',
+                    lineHeight: '1.75rem',
                     letterSpacing: 'normal',
+                    wordSpacing: 'normal',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
                   }}
                 >
                   {fragments.map((frag) =>
                     frag.span ? (
                       <span
                         key={frag.key}
-                        onMouseEnter={() => setHoveredSpanId(frag.span?.id ?? null)}
-                        onMouseLeave={() => setHoveredSpanId(null)}
-                        onMouseDown={handleSpanMouseDown}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSpanClick(e, frag.span?.id ?? '');
-                        }}
+                        data-span-id={frag.span.id}
                         style={{
                           // TipTap-style background highlight
-                          backgroundColor: bgForSeverity(
-                            frag.span.severity,
-                            hoveredSpanId === frag.span.id
-                          ),
+                          backgroundColor: bgForSeverity(frag.span.severity),
                           borderRadius: '3px',
                           boxDecorationBreak: 'clone',
                           WebkitBoxDecorationBreak: 'clone',
-                          transition: 'background-color 120ms ease-out',
-                          cursor: 'pointer',
-                          pointerEvents: 'auto',
+                          pointerEvents: 'none',
                         }}
                       >
                         {frag.text}
@@ -574,7 +722,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           <div className="absolute inset-0 z-50 flex items-center justify-center">
             <div
               className="absolute inset-0 bg-black/20"
-              onClick={() => setSelectedSpanId(null)}
+              onClick={closeSpanPopup}
             />
             <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl p-6">
               <div className="flex items-start justify-between mb-4">
@@ -583,7 +731,7 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 </h3>
                 <button
                   type="button"
-                  onClick={() => setSelectedSpanId(null)}
+                  onClick={closeSpanPopup}
                   className="p-1 rounded-full hover:bg-gray-100"
                 >
                   <X className="w-4 h-4 text-gray-500" />
