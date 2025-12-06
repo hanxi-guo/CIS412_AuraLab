@@ -148,8 +148,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [triggerApplyAll, setTriggerApplyAll] = useState(false);
   const requestCounterRef = useRef(0);
   const idleTimerRef = useRef<number | null>(null);
+  const historyTimerRef = useRef<number | null>(null);
   const initialStateRef = useRef({
     title: existingPost?.title ?? '',
     text: existingPost?.caption ?? '',
@@ -176,22 +178,37 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     }
   }, [isOpen]);
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo and apply all
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const modifier = isMac ? e.metaKey : e.ctrlKey;
 
-      if (modifier && e.key === 'z' && !e.shiftKey) {
+      if (e.key === 'Tab' && !modifier && !e.shiftKey) {
+        // Tab: Apply all suggestions
+        if (hasAnalysis && rawSpans.length > 0) {
+          e.preventDefault();
+          setTriggerApplyAll(true);
+        }
+      } else if (modifier && e.key === 'z' && !e.shiftKey) {
         // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows)
         e.preventDefault();
+        console.log('[Undo] Current state:', {
+          historyIndex,
+          historyLength: textHistory.length,
+          currentText: text.slice(0, 50),
+          history: textHistory.map(t => t.slice(0, 30))
+        });
         if (historyIndex > 0) {
           const newIndex = historyIndex - 1;
           setHistoryIndex(newIndex);
           setText(textHistory[newIndex]);
+          console.log('[Undo] Moved to index:', newIndex, 'Text:', textHistory[newIndex].slice(0, 50));
           closeSpanPopup();
           setHasAnalysis(false);
           setRawSpans([]);
+        } else {
+          console.log('[Undo] Cannot undo - already at start');
         }
       } else if (modifier && ((e.shiftKey && e.key === 'z') || e.key === 'y')) {
         // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows)
@@ -211,12 +228,15 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, historyIndex, textHistory]);
+  }, [isOpen, historyIndex, textHistory, hasAnalysis, rawSpans]);
 
   useEffect(() => {
     return () => {
       if (idleTimerRef.current) {
         window.clearTimeout(idleTimerRef.current);
+      }
+      if (historyTimerRef.current) {
+        window.clearTimeout(historyTimerRef.current);
       }
     };
   }, []);
@@ -254,10 +274,32 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 
   // Add to history when making important changes (like AI suggestions)
   const pushToHistory = (newText: string) => {
+    // Don't add duplicate entries
+    if (textHistory[historyIndex] === newText) {
+      console.log('[History] Skipping duplicate:', newText.slice(0, 50));
+      return;
+    }
+    
     const newHistory = textHistory.slice(0, historyIndex + 1);
     newHistory.push(newText);
+    console.log('[History] Saved:', {
+      text: newText.slice(0, 50),
+      newIndex: newHistory.length - 1,
+      historyLength: newHistory.length
+    });
     setTextHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
+  };
+
+  // Schedule saving to history after user stops typing
+  const scheduleHistoryPush = (newText: string) => {
+    if (historyTimerRef.current) {
+      window.clearTimeout(historyTimerRef.current);
+    }
+    historyTimerRef.current = window.setTimeout(() => {
+      console.log('[Schedule] Auto-saving to history:', newText.slice(0, 50));
+      pushToHistory(newText);
+    }, 1000); // Save to history after 1 second of no typing
   };
 
   const scheduleAnalysis = () => {
@@ -412,6 +454,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     // Close span popup if text changed
     closeSpanPopup();
     
+    // Schedule adding to history after user stops typing
+    scheduleHistoryPush(value);
+    
     // Only schedule analysis if there's substantial change
     const isMinorChange = Math.abs(value.length - oldText.length) <= 2;
     const trimmedOld = oldText.trim().toLowerCase();
@@ -497,8 +542,72 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     isViewingSpanRef.current = false;
   };
 
+  // Apply all AI suggestions at once (called via Tab key or button)
+  const applyAllSuggestions = () => {
+    if (!hasAnalysis || mappedSpans.length === 0) return;
+    
+    console.log('[Apply All] Starting with text:', text.slice(0, 50));
+    console.log('[Apply All] History before:', {
+      index: historyIndex,
+      length: textHistory.length,
+      history: textHistory.map(t => t.slice(0, 30))
+    });
+    
+    // Cancel any pending history push
+    if (historyTimerRef.current) {
+      window.clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+    }
+    
+    // Save current state before applying (only once)
+    pushToHistory(text);
+    
+    // Sort spans by position (reverse order to maintain offsets)
+    const sortedSpans = [...mappedSpans].sort((a, b) => b.start - a.start);
+    
+    let newText = text;
+    let appliedCount = 0;
+    
+    // Apply first suggestion from each span, starting from the end
+    for (const span of sortedSpans) {
+      if (span.suggestions && span.suggestions.length > 0) {
+        const suggestion = span.suggestions[0];
+        newText = newText.slice(0, span.start) + suggestion.text + newText.slice(span.end);
+        appliedCount++;
+      }
+    }
+    
+    if (appliedCount > 0) {
+      console.log('[Apply All] Applied', appliedCount, 'suggestions. New text:', newText.slice(0, 50));
+      setText(newText);
+      // Save the new text to history immediately after applying
+      // Use setTimeout to ensure setText has completed
+      setTimeout(() => {
+        pushToHistory(newText);
+      }, 0);
+      closeSpanPopup();
+      setHasAnalysis(false);
+      setRawSpans([]);
+      scheduleAnalysis();
+    }
+  };
+
+  // Effect to handle apply all trigger
+  useEffect(() => {
+    if (triggerApplyAll) {
+      applyAllSuggestions();
+      setTriggerApplyAll(false);
+    }
+  }, [triggerApplyAll, mappedSpans, text, hasAnalysis]);
+
   const handleSuggestionClick = (suggestion: AnalysisSuggestion) => {
     if (!selectedSpan) return;
+    
+    // Cancel any pending history push
+    if (historyTimerRef.current) {
+      window.clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+    }
     
     // Save current state to history before applying suggestion
     pushToHistory(text);
@@ -509,8 +618,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       text.slice(selectedSpan.end);
     setText(updatedText);
     
-    // Update history with new text
-    pushToHistory(updatedText);
+    // Save the new text to history after applying
+    setTimeout(() => {
+      pushToHistory(updatedText);
+    }, 0);
     
     closeSpanPopup();
     setHasAnalysis(false);
@@ -636,9 +747,17 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 </div>
               )}
             </div>
-            <div className="mt-1 text-xs text-right text-[#8C857B] flex justify-between">
-              <span className="text-left text-emerald-700">
-                {isAnalyzing ? 'Analyzing…' : analysisError ? analysisError : ''}
+            <div className="mt-1 text-xs text-[#8C857B] flex justify-between items-center">
+              <span className="text-left">
+                {isAnalyzing ? (
+                  <span className="text-emerald-700">Analyzing…</span>
+                ) : analysisError ? (
+                  <span className="text-red-600">{analysisError}</span>
+                ) : hasAnalysis && mappedSpans.length > 0 ? (
+                  <span className="text-[#8C857B]">
+                    Press <kbd className="px-1.5 py-0.5 rounded bg-[#E6E1D6] text-[#4A4238] font-mono text-[10px]">Tab</kbd> to apply all
+                  </span>
+                ) : null}
               </span>
               <span>
                 {text.length}/{MAX_CAPTION_LENGTH}

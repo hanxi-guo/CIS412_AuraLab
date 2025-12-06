@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image as ImageIcon, X } from 'lucide-react';
+import { Image as ImageIcon, X, ChevronDown } from 'lucide-react';
 import {
   MAX_BRIEF_LENGTH,
   MAX_CAMPAIGN_NAME_LENGTH,
@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [brandVoiceInput, setBrandVoiceInput] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isBriefCollapsed, setIsBriefCollapsed] = useState<boolean>(true);
 
   useEffect(() => {
     const load = async () => {
@@ -367,129 +368,150 @@ const App: React.FC = () => {
                         campaign.
                       </p>
                     </div>
-                  </div>
-
-                  {/* Overview */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
-                      Overview / Objective
-                    </label>
-                    <textarea
-                    value={brief.overview}
-                    onChange={(e) =>
-                      handleUpdateCampaignBriefField(
-                        selectedCampaign.id,
-                        'overview',
-                        e.target.value
-                      )
-                    }
-                    placeholder="What is this campaign trying to achieve? (e.g., launch a new collection, drive newsletter signups, build awareness, etc.)"
-                    className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[60px] max-h-28 overflow-y-auto placeholder:text-[#A39D93]"
-                  />
-                    <div className="text-[11px] text-right text-[#8C857B]">
-                      {brief.overview.length}/{MAX_BRIEF_LENGTH}
-                    </div>
-                  </div>
-
-                  {/* Target Audience */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
-                      Target Audience
-                    </label>
-                    <textarea
-                    value={brief.targetAudience}
-                    onChange={(e) =>
-                      handleUpdateCampaignBriefField(
-                        selectedCampaign.id,
-                        'targetAudience',
-                        e.target.value
-                      )
-                    }
-                    placeholder="Who are we talking to? Include age range, lifestyle, motivations, and what problem we solve for them."
-                    className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[56px] max-h-32 overflow-y-auto placeholder:text-[#A39D93]"
-                  />
-                    <div className="text-[11px] text-right text-[#8C857B]">
-                      {brief.targetAudience.length}/{MAX_BRIEF_LENGTH}
-                    </div>
-                  </div>
-
-                  {/* Brand Voice (tags) */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
-                      Brand Voice (Tags)
-                    </label>
-
-                    <div className="flex flex-wrap gap-2">
-                      {brief.brandVoice.map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => handleRemoveBrandVoiceTag(tag)}
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#DED9CD] text-[11px] text-[#4A4238] hover:bg-[#CFC8BA] transition-colors"
-                        >
-                          <span>{tag}</span>
-                          <span className="text-[10px] text-[#6B6359]">×</span>
-                        </button>
-                      ))}
-                      {brief.brandVoice.length === 0 && (
-                        <span className="text-[11px] text-[#A39D93] italic">
-                          No tags yet — start by adding a few tone keywords.
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-2 max-w-md">
-                      <input
-                        type="text"
-                        value={brandVoiceInput}
-                        onChange={(e) => setBrandVoiceInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddBrandVoiceTag();
-                          }
-                        }}
-                        placeholder="e.g. warm, aspirational, playful"
-                        className="flex-1 bg-white/80 border border-[#D1CBC1] rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#C27A70]"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddBrandVoiceTag}
-                        className={`px-3 py-2 rounded-full text-xs font-medium text-white ${
-                          brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS
-                            ? 'bg-[#CFC8BA] cursor-not-allowed'
-                            : 'bg-[#C27A70] hover:bg-[#A6655C]'
+                    <button
+                      type="button"
+                      onClick={() => setIsBriefCollapsed((prev) => !prev)}
+                      className="text-[11px] font-medium text-[#4A4238] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white shadow-sm border border-[#E6E1D6] transition-all duration-200"
+                    >
+                      <span>{isBriefCollapsed ? 'Show brief' : 'Hide brief'}</span>
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform duration-600 ${
+                          isBriefCollapsed ? 'rotate-0' : 'rotate-180'
                         }`}
-                        disabled={brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS}
-                      >
-                        + Add
-                      </button>
-                    </div>
-
-                    <div className="text-[10px] text-[#8C857B]">
-                      {brief.brandVoice.length}/{MAX_BRAND_VOICE_TAGS} tags
-                    </div>
+                      />
+                    </button>
                   </div>
 
-                  {/* Guardrails / Do & Don't */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold uppercase text-[#8C857B]">
-                      Guardrails (Do / Don&apos;t)
-                    </label>
-                    <textarea
-                      value={brief.guardrails}
-                      onChange={(e) =>
-                        handleUpdateCampaignBriefField(
-                          selectedCampaign.id,
-                          'guardrails',
-                          e.target.value
-                        )
-                      }
-                      placeholder="Any hard rules? (e.g., no pricing, avoid slang, always credit the artist, specific hashtags to use or avoid.)"
-                      className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[56px] max-h-32 overflow-y-auto placeholder:text-[#A39D93]"
-                    />
-                    <div className="text-[11px] text-right text-[#8C857B]">
-                      {brief.guardrails.length}/{MAX_BRIEF_LENGTH}
+                  {/* Animated collapsible content */}
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                      isBriefCollapsed ? 'max-h-0 opacity-0' : 'max-h-[2000px] opacity-100'
+                    }`}
+                  >
+                    <div className="space-y-3 pt-1">
+                      {/* Overview */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                          Overview / Objective
+                        </label>
+                        <textarea
+                          value={brief.overview}
+                          onChange={(e) =>
+                            handleUpdateCampaignBriefField(
+                              selectedCampaign.id,
+                              'overview',
+                              e.target.value
+                            )
+                          }
+                          placeholder="What is this campaign trying to achieve? (e.g., launch a new collection, drive newsletter signups, build awareness, etc.)"
+                          className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[52px] max-h-24 overflow-y-auto placeholder:text-[#A39D93]"
+                        />
+                        <div className="text-[11px] text-right text-[#8C857B]">
+                          {brief.overview.length}/{MAX_BRIEF_LENGTH}
+                        </div>
+                      </div>
+
+                      {/* Target Audience */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                          Target Audience
+                        </label>
+                        <textarea
+                          value={brief.targetAudience}
+                          onChange={(e) =>
+                            handleUpdateCampaignBriefField(
+                              selectedCampaign.id,
+                              'targetAudience',
+                              e.target.value
+                            )
+                          }
+                          placeholder="Who are we talking to? Include age range, lifestyle, motivations, and what problem we solve for them."
+                          className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[52px] max-h-24 overflow-y-auto placeholder:text-[#A39D93]"
+                        />
+                        <div className="text-[11px] text-right text-[#8C857B]">
+                          {brief.targetAudience.length}/{MAX_BRIEF_LENGTH}
+                        </div>
+                      </div>
+
+                      {/* Brand Voice (tags) */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                          Brand Voice (Tags)
+                        </label>
+
+                          <div className="flex flex-wrap gap-2">
+                            {brief.brandVoice.map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => handleRemoveBrandVoiceTag(tag)}
+                                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#DED9CD] text-[11px] text-[#4A4238] hover:bg-[#CFC8BA] transition-colors"
+                              >
+                                <span>{tag}</span>
+                                <span className="text-[10px] text-[#6B6359]">×</span>
+                              </button>
+                            ))}
+                            {brief.brandVoice.length === 0 && (
+                              <span className="text-[11px] text-[#A39D93] italic">
+                                No tags yet — start by adding a few tone keywords.
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-2 max-w-md">
+                            <input
+                              type="text"
+                              value={brandVoiceInput}
+                              onChange={(e) => setBrandVoiceInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleAddBrandVoiceTag();
+                                }
+                              }}
+                              placeholder="e.g. warm, aspirational, playful"
+                              className="flex-1 bg-white/80 border border-[#D1CBC1] rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#C27A70]"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddBrandVoiceTag}
+                              className={`px-3 py-2 rounded-full text-xs font-medium text-white ${
+                                brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS
+                                  ? 'bg-[#CFC8BA] cursor-not-allowed'
+                                  : 'bg-[#C27A70] hover:bg-[#A6655C]'
+                              }`}
+                              disabled={brief.brandVoice.length >= MAX_BRAND_VOICE_TAGS}
+                            >
+                              + Add
+                            </button>
+                          </div>
+
+                          <div className="text-[10px] text-[#8C857B]">
+                            {brief.brandVoice.length}/{MAX_BRAND_VOICE_TAGS} tags
+                          </div>
+                      </div>
+
+                      {/* Guardrails / Do & Don't */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold uppercase text-[#8C857B]">
+                          Guardrails (Do / Don&apos;t)
+                        </label>
+                        <textarea
+                          value={brief.guardrails}
+                          onChange={(e) =>
+                            handleUpdateCampaignBriefField(
+                              selectedCampaign.id,
+                              'guardrails',
+                              e.target.value
+                            )
+                          }
+                          placeholder="Any hard rules? (e.g., no pricing, avoid slang, always credit the artist, specific hashtags to use or avoid.)"
+                          className="w-full bg-transparent border border-[#D1CBC1] rounded-2xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#C27A70] focus:bg-white/80 resize-none min-h-[52px] max-h-24 overflow-y-auto placeholder:text-[#A39D93]"
+                        />
+                        <div className="text-[11px] text-right text-[#8C857B]">
+                          {brief.guardrails.length}/{MAX_BRIEF_LENGTH}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
