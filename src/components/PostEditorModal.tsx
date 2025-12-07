@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Image as ImageIcon, X } from 'lucide-react';
 import type { CampaignBrief, Post, PostDraft, AnalysisSpan, AnalysisSuggestion } from '../types';
 import {
@@ -149,7 +149,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [triggerApplyAll, setTriggerApplyAll] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
   const requestCounterRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const idleTimerRef = useRef<number | null>(null);
   const historyTimerRef = useRef<number | null>(null);
   const initialStateRef = useRef({
@@ -162,6 +164,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const overlayRef = useRef<HTMLDivElement>(null);
   const lastAnalyzedTextRef = useRef<string>(existingPost?.caption ?? '');
   const isViewingSpanRef = useRef(false);
+  // Cache to avoid re-analyzing same content
+  const analysisCacheRef = useRef<Map<string, AnalysisSpan[]>>(new Map());
 
   // Undo/Redo state
   const [textHistory, setTextHistory] = useState<string[]>([existingPost?.caption ?? '']);
@@ -204,7 +208,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           setHistoryIndex(newIndex);
           setText(textHistory[newIndex]);
           console.log('[Undo] Moved to index:', newIndex, 'Text:', textHistory[newIndex].slice(0, 50));
-          closeSpanPopup();
+          setSelectedSpanId(null);
+          isViewingSpanRef.current = false;
           setHasAnalysis(false);
           setRawSpans([]);
         } else {
@@ -217,7 +222,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
           const newIndex = historyIndex + 1;
           setHistoryIndex(newIndex);
           setText(textHistory[newIndex]);
-          closeSpanPopup();
+          setSelectedSpanId(null);
+          isViewingSpanRef.current = false;
           setHasAnalysis(false);
           setRawSpans([]);
         }
@@ -228,8 +234,9 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, historyIndex, textHistory, hasAnalysis, rawSpans]);
+  }, [isOpen, historyIndex, textHistory, hasAnalysis, rawSpans, text]);
 
+  // Cleanup: release object URLs and abort pending requests when component unmounts
   useEffect(() => {
     return () => {
       if (idleTimerRef.current) {
@@ -238,8 +245,18 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       if (historyTimerRef.current) {
         window.clearTimeout(historyTimerRef.current);
       }
+      // Abort any pending analysis request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Release all object URLs to prevent memory leaks
+      imagePreviewUrls.forEach((url) => {
+        if (url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
     };
-  }, []);
+  }, [imagePreviewUrls]);
 
   // Sync scroll position between textarea and overlay
   useEffect(() => {
@@ -256,6 +273,121 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     textarea.addEventListener('scroll', handleScroll);
     return () => textarea.removeEventListener('scroll', handleScroll);
   }, [hasAnalysis]);
+
+  // Map raw spans to positions in current text (memoized for performance)
+  const mappedSpans = useMemo(() => {
+    return hasAnalysis ? mapSpansToRanges(text, rawSpans) : [];
+  }, [hasAnalysis, text, rawSpans]);
+
+  const fragments = useMemo(() => {
+    return hasAnalysis ? buildFragments(text, mappedSpans) : [];
+  }, [hasAnalysis, text, mappedSpans]);
+
+  // Effect to handle apply all trigger
+  useEffect(() => {
+    if (triggerApplyAll && hasAnalysis && mappedSpans.length > 0) {
+      // Cancel any pending history push
+      if (historyTimerRef.current) {
+        window.clearTimeout(historyTimerRef.current);
+        historyTimerRef.current = null;
+      }
+      
+      // Save current state before applying (only once)
+      const newHistory = textHistory.slice(0, historyIndex + 1);
+      if (newHistory[newHistory.length - 1] !== text) {
+        newHistory.push(text);
+        setTextHistory(newHistory);
+        setHistoryIndex(newHistory.length - 1);
+      }
+      
+      // Sort spans by position (reverse order to maintain offsets)
+      const sortedSpans = [...mappedSpans].sort((a, b) => b.start - a.start);
+      
+      let newText = text;
+      let appliedCount = 0;
+      
+      // Apply first suggestion from each span, starting from the end
+      for (const span of sortedSpans) {
+        if (span.suggestions && span.suggestions.length > 0) {
+          const suggestion = span.suggestions[0];
+          newText = newText.slice(0, span.start) + suggestion.text + newText.slice(span.end);
+          appliedCount++;
+        }
+      }
+      
+      if (appliedCount > 0) {
+        setText(newText);
+        // Save the new text to history immediately after applying
+        setTimeout(() => {
+          const finalHistory = textHistory.slice(0, historyIndex + 1);
+          finalHistory.push(newText);
+          setTextHistory(finalHistory);
+          setHistoryIndex(finalHistory.length - 1);
+        }, 0);
+        setSelectedSpanId(null);
+        isViewingSpanRef.current = false;
+        setHasAnalysis(false);
+        setRawSpans([]);
+        
+        // Schedule analysis - inline to avoid adding runAnalysis to dependencies
+        if (idleTimerRef.current) {
+          window.clearTimeout(idleTimerRef.current);
+        }
+        idleTimerRef.current = window.setTimeout(() => {
+          // Re-run analysis after applying suggestions
+          const trimmed = newText.trim();
+          if (!trimmed) return;
+          
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
+          
+          const abortController = new AbortController();
+          abortControllerRef.current = abortController;
+          
+          const reqId = requestCounterRef.current + 1;
+          requestCounterRef.current = reqId;
+          setIsAnalyzing(true);
+          setAnalysisError(null);
+          
+          runDraftAnalysis({
+            title,
+            caption: trimmed,
+            platform: previewPlatform,
+            campaignContext: campaignBrief
+              ? {
+                  overview: campaignBrief.overview,
+                  target_audience: campaignBrief.targetAudience,
+                  brand_voice: campaignBrief.brandVoice,
+                  guardrails: campaignBrief.guardrails,
+                }
+              : undefined,
+          }, abortController.signal).then(res => {
+            if (reqId !== requestCounterRef.current) return;
+            const spans = res.spans || [];
+            setRawSpans(spans);
+            setHasAnalysis(spans.length > 0);
+            lastAnalyzedTextRef.current = trimmed;
+            if (reqId === requestCounterRef.current) {
+              setIsAnalyzing(false);
+            }
+          }).catch(err => {
+            if ((err as Error).name === 'AbortError') return;
+            if (reqId !== requestCounterRef.current) return;
+            setAnalysisError((err as Error).message);
+            setHasAnalysis(false);
+            setRawSpans([]);
+            lastAnalyzedTextRef.current = trimmed;
+            if (reqId === requestCounterRef.current) {
+              setIsAnalyzing(false);
+            }
+          });
+        }, 800);
+      }
+      setTriggerApplyAll(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerApplyAll, hasAnalysis, mappedSpans, text, historyIndex, textHistory]);
 
   if (!isOpen) return null;
 
@@ -306,10 +438,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     if (idleTimerRef.current) {
       window.clearTimeout(idleTimerRef.current);
     }
-    // Longer delay to avoid re-analyzing for minor edits
+    // Fast delay for better responsiveness
     idleTimerRef.current = window.setTimeout(() => {
       runAnalysis();
-    }, 1200);
+    }, 500);
   };
 
   const runAnalysis = async () => {
@@ -322,10 +454,62 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       return;
     }
 
+    // Create cache key from content
+    const cacheKey = `${trimmed}|${title}|${previewPlatform}`;
+    
+    // Check cache first
+    const cached = analysisCacheRef.current.get(cacheKey);
+    if (cached) {
+      setRawSpans(cached);
+      setHasAnalysis(cached.length > 0);
+      lastAnalyzedTextRef.current = trimmed;
+      setIsAnalyzing(false);
+      return;
+    }
+
+    // Abort any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     const reqId = requestCounterRef.current + 1;
     requestCounterRef.current = reqId;
     setIsAnalyzing(true);
+    setAnalysisProgress(0);
     setAnalysisError(null);
+    
+    // Estimate time based on input tokens
+    // Conservative estimate: 3.5 chars = 1 token, ~20ms per token (includes network latency)
+    const estimatedTokens = Math.ceil((trimmed.length + title.length) / 3.5);
+    const baseTimeMs = estimatedTokens * 20; // 20ms per token (conservative)
+    const estimatedTimeMs = Math.max(baseTimeMs, 3000); // Minimum 3 seconds
+    const startTime = Date.now();
+    
+    // Simulate progress with smooth easing
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const linearProgress = (elapsed / estimatedTimeMs) * 100;
+      
+      // Ease out: fast at start, slow near end
+      let progress;
+      if (linearProgress < 60) {
+        // Fast progress for first 60%
+        progress = linearProgress;
+      } else if (linearProgress < 85) {
+        // Slower for 60-85%
+        progress = 60 + (linearProgress - 60) * 0.7;
+      } else {
+        // Very slow for final 15%, asymptotically approach 95%
+        const remaining = 95 - 77.5; // 95 - (60 + 25*0.7)
+        progress = 77.5 + remaining * (1 - Math.exp(-(linearProgress - 85) / 30));
+      }
+      
+      setAnalysisProgress(Math.min(progress, 95)); // Cap at 95% until complete
+    }, 50); // Update every 50ms for smoother animation
 
     try {
       const res = await runDraftAnalysis({
@@ -340,14 +524,29 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
               guardrails: campaignBrief.guardrails,
             }
           : undefined,
-      });
+      }, abortController.signal);
 
       if (reqId !== requestCounterRef.current) {
+        clearInterval(progressInterval);
         return;
       }
 
+      // Complete progress animation
+      setAnalysisProgress(100);
+      
       // Save raw spans (will be mapped to positions on each render)
       const spans = res.spans || [];
+      
+      // Cache the result
+      analysisCacheRef.current.set(cacheKey, spans);
+      // Limit cache size to 10 entries
+      if (analysisCacheRef.current.size > 10) {
+        const firstKey = analysisCacheRef.current.keys().next().value;
+        if (firstKey) {
+          analysisCacheRef.current.delete(firstKey);
+        }
+      }
+      
       setRawSpans(spans);
       setHasAnalysis(spans.length > 0);
       // Remember the text we just analyzed
@@ -355,6 +554,11 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       // Don't clear selectedSpanId if user is viewing a span analysis
       // This prevents the popup from disappearing when background analysis completes
     } catch (err) {
+      clearInterval(progressInterval);
+      // Don't show error if request was aborted
+      if ((err as Error).name === 'AbortError') {
+        return;
+      }
       if (reqId !== requestCounterRef.current) {
         return;
       }
@@ -364,8 +568,10 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       // Still remember the text even if analysis failed, to avoid retrying on blur
       lastAnalyzedTextRef.current = trimmed;
     } finally {
+      clearInterval(progressInterval);
       if (reqId === requestCounterRef.current) {
         setIsAnalyzing(false);
+        setAnalysisProgress(0);
       }
     }
   };
@@ -403,6 +609,11 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   };
 
   const handleRemoveImage = (index: number) => {
+    // Release the object URL before removing
+    const urlToRemove = imagePreviewUrls[index];
+    if (urlToRemove && urlToRemove.startsWith('blob:')) {
+      URL.revokeObjectURL(urlToRemove);
+    }
     setImagePreviewUrls((prev) => prev.filter((_, i) => i !== index));
     setFiles((prev) => prev.filter((_, i) => i !== index));
     setCurrentImageIndex(0);
@@ -457,24 +668,53 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     // Schedule adding to history after user stops typing
     scheduleHistoryPush(value);
     
-    // Only schedule analysis if there's substantial change
-    const isMinorChange = Math.abs(value.length - oldText.length) <= 2;
-    const trimmedOld = oldText.trim().toLowerCase();
-    const trimmedNew = value.trim().toLowerCase();
-    const similarityRatio = trimmedOld.length > 0 
-      ? Math.min(trimmedOld.length, trimmedNew.length) / Math.max(trimmedOld.length, trimmedNew.length)
-      : 0;
+    // Smart analysis scheduling - avoid unnecessary re-analysis
+    const trimmedNew = value.trim();
+    const trimmedOld = oldText.trim();
     
-    // Only re-analyze if it's a significant change (not just punctuation/typo)
-    const shouldReanalyze = !isMinorChange || similarityRatio < 0.9;
-    
-    if (shouldReanalyze) {
-      // Significant change - clear old highlights and schedule new analysis
+    // Don't analyze if text is empty or too short
+    if (trimmedNew.length < 3) {
       setHasAnalysis(false);
       setRawSpans([]);
-      scheduleAnalysis();
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      return;
     }
-    // For minor changes, keep highlights visible - they're still mostly accurate
+    
+    // Calculate change magnitude
+    const lengthDiff = Math.abs(value.length - oldText.length);
+    const isMinorChange = lengthDiff <= 3;
+    
+    // Check if just whitespace/formatting changes
+    const contentOld = trimmedOld.replace(/\s+/g, ' ');
+    const contentNew = trimmedNew.replace(/\s+/g, ' ');
+    const isWhitespaceChange = contentOld === contentNew;
+    
+    if (isWhitespaceChange) {
+      // No need to re-analyze for just whitespace changes
+      return;
+    }
+    
+    // Calculate similarity for minor changes
+    if (isMinorChange && trimmedOld.length > 0) {
+      const minLen = Math.min(contentOld.length, contentNew.length);
+      const maxLen = Math.max(contentOld.length, contentNew.length);
+      const similarityRatio = minLen / maxLen;
+      
+      // If very similar (>95%), keep current analysis visible
+      if (similarityRatio > 0.95) {
+        // Still schedule analysis but keep highlights visible
+        scheduleAnalysis();
+        return;
+      }
+    }
+    
+    // Significant change - clear old highlights and schedule new analysis
+    setHasAnalysis(false);
+    setRawSpans([]);
+    scheduleAnalysis();
   };
 
   const handleCaptionClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -526,12 +766,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       runAnalysis();
     }
   };
-
-
-  // Map raw spans to positions in current text (recalculated on each render)
-  const mappedSpans = hasAnalysis ? mapSpansToRanges(text, rawSpans) : [];
-  const fragments = hasAnalysis ? buildFragments(text, mappedSpans) : [];
-
   const selectedSpan =
     selectedSpanId !== null
       ? mappedSpans.find((s) => s.id === selectedSpanId) ?? null
@@ -542,63 +776,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     isViewingSpanRef.current = false;
   };
 
-  // Apply all AI suggestions at once (called via Tab key or button)
-  const applyAllSuggestions = () => {
-    if (!hasAnalysis || mappedSpans.length === 0) return;
-    
-    console.log('[Apply All] Starting with text:', text.slice(0, 50));
-    console.log('[Apply All] History before:', {
-      index: historyIndex,
-      length: textHistory.length,
-      history: textHistory.map(t => t.slice(0, 30))
-    });
-    
-    // Cancel any pending history push
-    if (historyTimerRef.current) {
-      window.clearTimeout(historyTimerRef.current);
-      historyTimerRef.current = null;
-    }
-    
-    // Save current state before applying (only once)
-    pushToHistory(text);
-    
-    // Sort spans by position (reverse order to maintain offsets)
-    const sortedSpans = [...mappedSpans].sort((a, b) => b.start - a.start);
-    
-    let newText = text;
-    let appliedCount = 0;
-    
-    // Apply first suggestion from each span, starting from the end
-    for (const span of sortedSpans) {
-      if (span.suggestions && span.suggestions.length > 0) {
-        const suggestion = span.suggestions[0];
-        newText = newText.slice(0, span.start) + suggestion.text + newText.slice(span.end);
-        appliedCount++;
-      }
-    }
-    
-    if (appliedCount > 0) {
-      console.log('[Apply All] Applied', appliedCount, 'suggestions. New text:', newText.slice(0, 50));
-      setText(newText);
-      // Save the new text to history immediately after applying
-      // Use setTimeout to ensure setText has completed
-      setTimeout(() => {
-        pushToHistory(newText);
-      }, 0);
-      closeSpanPopup();
-      setHasAnalysis(false);
-      setRawSpans([]);
-      scheduleAnalysis();
-    }
-  };
-
-  // Effect to handle apply all trigger
-  useEffect(() => {
-    if (triggerApplyAll) {
-      applyAllSuggestions();
-      setTriggerApplyAll(false);
-    }
-  }, [triggerApplyAll, mappedSpans, text, hasAnalysis]);
 
   const handleSuggestionClick = (suggestion: AnalysisSuggestion) => {
     if (!selectedSpan) return;
@@ -747,10 +924,35 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                 </div>
               )}
             </div>
-            <div className="mt-1 text-xs text-[#8C857B] flex justify-between items-center">
-              <span className="text-left">
+            <div className="mt-1 text-xs flex justify-between items-center">
+              <div className="flex-1 mr-4">
                 {isAnalyzing ? (
-                  <span className="text-emerald-700">Analyzing…</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-[#E6E1D6] rounded-full overflow-hidden relative">
+                      <div 
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent"
+                        style={{
+                          animation: 'shimmer 1.5s ease-in-out infinite'
+                        }}
+                      />
+                      <div 
+                        className="h-full bg-gradient-to-r from-[#C27A70] to-[#D4A5A5] rounded-full transition-all duration-300 ease-out"
+                        style={{
+                          width: `${analysisProgress}%`
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1 h-1 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1 h-1 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <span className="text-emerald-700 font-medium whitespace-nowrap">
+                        {Math.round(analysisProgress)}%
+                      </span>
+                    </div>
+                  </div>
                 ) : analysisError ? (
                   <span className="text-red-600">{analysisError}</span>
                 ) : hasAnalysis && mappedSpans.length > 0 ? (
@@ -758,11 +960,18 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
                     Press <kbd className="px-1.5 py-0.5 rounded bg-[#E6E1D6] text-[#4A4238] font-mono text-[10px]">Tab</kbd> to apply all
                   </span>
                 ) : null}
-              </span>
-              <span>
+              </div>
+              <span className="text-[#8C857B]">
                 {text.length}/{MAX_CAPTION_LENGTH}
               </span>
             </div>
+            
+            <style>{`
+              @keyframes shimmer {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(100%); }
+              }
+            `}</style>
           </div>
 
           {/* Media Attachments */}

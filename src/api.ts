@@ -22,7 +22,8 @@ interface DraftAnalysisResponse {
 }
 
 export async function runDraftAnalysis(
-  payload: DraftAnalysisPayload
+  payload: DraftAnalysisPayload,
+  signal?: AbortSignal
 ): Promise<DraftAnalysisResponse> {
   const res = await fetch(`${API_BASE}/analysis/draft`, {
     method: 'POST',
@@ -35,6 +36,7 @@ export async function runDraftAnalysis(
       platform: payload.platform,
       campaign_context: payload.campaignContext,
     }),
+    signal,
   });
 
   if (!res.ok) {
