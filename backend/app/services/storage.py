@@ -45,9 +45,14 @@ async def save_uploads(
                     raise ValueError("File too large")
                 out.write(chunk)
 
+        media_url = f"/media/{campaign_id}/{filename}"
+        print(f"📁 [Storage] Saved file: {dest}")
+        print(f"📁 [Storage] Media URL: {media_url}")
+        print(f"📁 [Storage] File exists: {dest.exists()}")
+        
         saved.append(
             MediaCreate(
-                url=f"/media/{campaign_id}/{filename}",
+                url=media_url,
                 type=file.content_type.split("/")[0] if file.content_type else "image",
                 size_bytes=size,
             )

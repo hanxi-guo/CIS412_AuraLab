@@ -138,10 +138,71 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
 }) => {
   const [title, setTitle] = useState(existingPost?.title ?? '');
   const [text, setText] = useState(existingPost?.caption ?? '');
-  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>(existingPost?.images ?? []);
+  
+  // Helper function to validate and filter image URLs
+  const validateImageUrls = (urls: string[]): string[] => {
+    const validated = urls.filter((url) => {
+      if (!url || typeof url !== 'string') {
+        return false;
+      }
+      
+      // Check if it's just a UUID (invalid)
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidPattern.test(url.trim())) {
+        return false;
+      }
+      
+      // Check if it's a valid blob URL
+      if (url.startsWith('blob:')) {
+        // Blob URLs should have format: blob:http://host/uuid or blob:https://host/uuid
+        const blobUrlPattern = /^blob:https?:\/\/[^/]+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!blobUrlPattern.test(url)) {
+          return false;
+        }
+        return true;
+      }
+      
+      // Check if it's a valid HTTP/HTTPS URL
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        try {
+          new URL(url);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
+      
+      // Check if it's a valid relative path
+      if (url.startsWith('/')) {
+        return true;
+      }
+      
+      return false;
+    });
+    
+    return validated;
+  };
+  
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>(() => {
+    const initial = existingPost?.images ?? [];
+    return validateImageUrls(initial);
+  });
   const [files, setFiles] = useState<File[]>([]);
+
+  // Sync imagePreviewUrls when existingPost changes (e.g., after save)
+  useEffect(() => {
+    if (existingPost?.images) {
+      const validated = validateImageUrls(existingPost.images);
+      setImagePreviewUrls(validated);
+    } else if (!existingPost) {
+      // New post - clear images
+      setImagePreviewUrls([]);
+      setFiles([]);
+    }
+  }, [existingPost?.id, existingPost?.images?.join(',')]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [previewPlatform, setPreviewPlatform] = useState<PreviewPlatform>('instagram');
+  const previousPlatformRef = useRef<PreviewPlatform>('instagram');
 
   const [hasAnalysis, setHasAnalysis] = useState(false);
   const [rawSpans, setRawSpans] = useState<AnalysisSpan[]>([]); // Original spans from API
@@ -166,6 +227,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const isViewingSpanRef = useRef(false);
   // Cache to avoid re-analyzing same content
   const analysisCacheRef = useRef<Map<string, AnalysisSpan[]>>(new Map());
+  // Track all blob URLs we've created to clean them up on unmount
+  const blobUrlsRef = useRef<Set<string>>(new Set());
 
   // Undo/Redo state
   const [textHistory, setTextHistory] = useState<string[]>([existingPost?.caption ?? '']);
@@ -197,23 +260,14 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       } else if (modifier && e.key === 'z' && !e.shiftKey) {
         // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows)
         e.preventDefault();
-        console.log('[Undo] Current state:', {
-          historyIndex,
-          historyLength: textHistory.length,
-          currentText: text.slice(0, 50),
-          history: textHistory.map(t => t.slice(0, 30))
-        });
         if (historyIndex > 0) {
           const newIndex = historyIndex - 1;
           setHistoryIndex(newIndex);
           setText(textHistory[newIndex]);
-          console.log('[Undo] Moved to index:', newIndex, 'Text:', textHistory[newIndex].slice(0, 50));
           setSelectedSpanId(null);
           isViewingSpanRef.current = false;
           setHasAnalysis(false);
           setRawSpans([]);
-        } else {
-          console.log('[Undo] Cannot undo - already at start');
         }
       } else if (modifier && ((e.shiftKey && e.key === 'z') || e.key === 'y')) {
         // Redo: Cmd+Shift+Z (Mac) or Ctrl+Y (Windows)
@@ -249,14 +303,16 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      // Release all object URLs to prevent memory leaks
-      imagePreviewUrls.forEach((url) => {
+      // Release all tracked blob URLs to prevent memory leaks
+      // Only clean up on component unmount, not when imagePreviewUrls changes
+      blobUrlsRef.current.forEach((url) => {
         if (url.startsWith('blob:')) {
           URL.revokeObjectURL(url);
         }
       });
+      blobUrlsRef.current.clear();
     };
-  }, [imagePreviewUrls]);
+  }, []); // Empty deps - only run on mount/unmount
 
   // Sync scroll position between textarea and overlay
   useEffect(() => {
@@ -273,6 +329,27 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     textarea.addEventListener('scroll', handleScroll);
     return () => textarea.removeEventListener('scroll', handleScroll);
   }, [hasAnalysis]);
+
+  // Re-analyze when platform changes
+  useEffect(() => {
+    // Skip on initial mount
+    if (previousPlatformRef.current === previewPlatform) {
+      return;
+    }
+    
+    // Platform changed - trigger re-analysis if there's text
+    if (text.trim() && hasAnalysis) {
+      // Clear current analysis
+      setHasAnalysis(false);
+      setRawSpans([]);
+      closeSpanPopup();
+      
+      // Trigger new analysis with new platform
+      scheduleAnalysis();
+    }
+    
+    previousPlatformRef.current = previewPlatform;
+  }, [previewPlatform, text, hasAnalysis]);
 
   // Map raw spans to positions in current text (memoized for performance)
   const mappedSpans = useMemo(() => {
@@ -408,17 +485,11 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
   const pushToHistory = (newText: string) => {
     // Don't add duplicate entries
     if (textHistory[historyIndex] === newText) {
-      console.log('[History] Skipping duplicate:', newText.slice(0, 50));
       return;
     }
     
     const newHistory = textHistory.slice(0, historyIndex + 1);
     newHistory.push(newText);
-    console.log('[History] Saved:', {
-      text: newText.slice(0, 50),
-      newIndex: newHistory.length - 1,
-      historyLength: newHistory.length
-    });
     setTextHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   };
@@ -429,7 +500,6 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
       window.clearTimeout(historyTimerRef.current);
     }
     historyTimerRef.current = window.setTimeout(() => {
-      console.log('[Schedule] Auto-saving to history:', newText.slice(0, 50));
       pushToHistory(newText);
     }, 1000); // Save to history after 1 second of no typing
   };
@@ -598,11 +668,18 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const newUrls: string[] = [];
     selectedFiles.forEach((file) => {
       const url = URL.createObjectURL(file);
+      // Track this blob URL for cleanup
+      blobUrlsRef.current.add(url);
       newUrls.push(url);
     });
-
+    
     setFiles((prev) => [...prev, ...selectedFiles]);
-    setImagePreviewUrls((prev) => [...prev, ...newUrls]);
+    
+    setImagePreviewUrls((prev) => {
+      const updated = [...prev, ...newUrls];
+      return validateImageUrls(updated);
+    });
+    
     setCurrentImageIndex(0);
 
     e.target.value = '';
@@ -613,6 +690,8 @@ const PostEditorModal: React.FC<PostEditorModalProps> = ({
     const urlToRemove = imagePreviewUrls[index];
     if (urlToRemove && urlToRemove.startsWith('blob:')) {
       URL.revokeObjectURL(urlToRemove);
+      // Remove from tracking set
+      blobUrlsRef.current.delete(urlToRemove);
     }
     setImagePreviewUrls((prev) => prev.filter((_, i) => i !== index));
     setFiles((prev) => prev.filter((_, i) => i !== index));

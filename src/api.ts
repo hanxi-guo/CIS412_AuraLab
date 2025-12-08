@@ -73,15 +73,42 @@ const mapBrief = (brief: ApiCampaign['brief']): CampaignBrief => ({
   guardrails: brief?.guardrails ?? '',
 });
 
-const mapPost = (post: ApiPost): Post => ({
-  id: post.id,
-  title: post.title ?? '',
-  caption: post.caption ?? '',
-  images: (post.media ?? []).map((m) => {
-    const baseUrl = API_BASE.replace('/api', '');
-    return m.url.startsWith('/') ? `${baseUrl}${m.url}` : m.url;
-  }),
-});
+const mapPost = (post: ApiPost): Post => {
+  const baseUrl = API_BASE.replace('/api', '');
+  console.log('🔗 [API] mapPost called for post:', post.id);
+  console.log('🔗 [API] Base URL:', baseUrl);
+  console.log('🔗 [API] Raw media from API:', post.media);
+  
+  const mappedImages = (post.media ?? [])
+    .filter((m) => {
+      // Validate that media object has a url property
+      if (!m || !m.url) {
+        console.error('❌ [API] Invalid media object (missing url):', m);
+        return false;
+      }
+      // Check if it's just an ID (UUID pattern) instead of a URL
+      const isJustId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.url);
+      if (isJustId) {
+        console.error(`❌ [API] Media url is just an ID, not a path: "${m.url}"`);
+        return false;
+      }
+      return true;
+    })
+    .map((m) => {
+      const finalUrl = m.url.startsWith('/') ? `${baseUrl}${m.url}` : m.url;
+      console.log(`🔗 [API] Mapping media: "${m.url}" → "${finalUrl}"`);
+      return finalUrl;
+    });
+  
+  console.log('🔗 [API] Final mapped images:', mappedImages);
+  
+  return {
+    id: post.id,
+    title: post.title ?? '',
+    caption: post.caption ?? '',
+    images: mappedImages,
+  };
+};
 
 const mapCampaign = (apiCampaign: ApiCampaign): Campaign => ({
   id: apiCampaign.id,
@@ -160,6 +187,14 @@ export async function createPost(
   campaignId: string,
   payload: PostPayload
 ): Promise<Post> {
+  console.log('📤 [API] createPost called');
+  console.log('📤 [API] Campaign ID:', campaignId);
+  console.log('📤 [API] Payload:', { 
+    title: payload.title, 
+    caption: payload.caption?.slice(0, 50) + '...',
+    filesCount: payload.files?.length || 0 
+  });
+  
   const form = new FormData();
   if (payload.title !== undefined) form.append('title', payload.title);
   if (payload.caption !== undefined) form.append('caption', payload.caption);
@@ -167,21 +202,36 @@ export async function createPost(
   if (payload.status !== undefined) form.append('status', payload.status);
 
   if (payload.files && payload.files.length > 0) {
-    payload.files.forEach((file) => {
+    console.log('📤 [API] Uploading files:');
+    payload.files.forEach((file, idx) => {
+      console.log(`  ${idx + 1}. ${file.name} (${file.size} bytes, ${file.type})`);
       form.append('media', file);
     });
   }
 
-  const res = await fetch(`${API_BASE}/campaigns/${campaignId}/posts`, {
+  const url = `${API_BASE}/campaigns/${campaignId}/posts`;
+  console.log('📤 [API] POSTing to:', url);
+  
+  const res = await fetch(url, {
     method: 'POST',
     body: form,
   });
+  
+  console.log('📤 [API] Response status:', res.status, res.statusText);
+  
   if (!res.ok) {
     const detail = await res.text();
+    console.error('❌ [API] Create post failed:', detail);
     throw new Error(`${res.status} ${res.statusText}: ${detail || 'request failed'}`);
   }
+  
   const data: ApiPost = await res.json();
-  return mapPost(data);
+  console.log('📤 [API] Response data:', data);
+  
+  const mappedPost = mapPost(data);
+  console.log('📤 [API] Mapped post:', mappedPost);
+  
+  return mappedPost;
 }
 
 export async function updatePost(id: string, payload: PostPayload): Promise<Post> {

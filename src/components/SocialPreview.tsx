@@ -29,6 +29,35 @@ const SocialPreview: React.FC<SocialPreviewProps> = ({
 }) => {
   const hasImages = imagePreviewUrls.length > 0;
 
+  // Helper function to render image with validation
+  const renderImage = (alt: string, className: string = "w-full h-full object-cover") => {
+    const currentUrl = imagePreviewUrls[currentImageIndex];
+    
+    // Validate URL before rendering
+    const isValidUrl = currentUrl && (
+      currentUrl.startsWith('blob:') ||
+      currentUrl.startsWith('http://') ||
+      currentUrl.startsWith('https://') ||
+      currentUrl.startsWith('/')
+    );
+    
+    if (!isValidUrl) {
+      return (
+        <div className="w-full h-full flex items-center justify-center text-xs text-red-500 px-4 text-center">
+          Invalid image URL
+        </div>
+      );
+    }
+    
+    return (
+      <img
+        src={currentUrl}
+        alt={alt}
+        className={className}
+      />
+    );
+  };
+
   return (
     <div className={`w-1/2 p-10 ${THEME.sidebar} flex flex-col`}>
       {/* Platform Tabs */}
@@ -90,11 +119,7 @@ const SocialPreview: React.FC<SocialPreviewProps> = ({
               <div className="relative aspect-square bg-gray-100">
                 {hasImages ? (
                   <>
-                    <img
-                      src={imagePreviewUrls[currentImageIndex]}
-                      alt={`preview-${currentImageIndex}`}
-                      className="w-full h-full object-cover"
-                    />
+                    {renderImage(`preview-${currentImageIndex}`)}
                     {imagePreviewUrls.length > 1 && (
                       <>
                         <button
@@ -187,11 +212,7 @@ const SocialPreview: React.FC<SocialPreviewProps> = ({
               <div className="relative bg-gray-100 max-h-80 overflow-hidden flex items-center justify-center">
                 {hasImages ? (
                   <>
-                    <img
-                      src={imagePreviewUrls[currentImageIndex]}
-                      alt={`facebook-preview-${currentImageIndex}`}
-                      className="w-full h-full object-cover"
-                    />
+                    {renderImage(`facebook-preview-${currentImageIndex}`)}
 
                     {imagePreviewUrls.length > 1 && (
                       <>
@@ -268,11 +289,7 @@ const SocialPreview: React.FC<SocialPreviewProps> = ({
               <div className="relative bg-gray-100 max-h-80 overflow-hidden flex items-center justify-center">
                 {hasImages ? (
                   <>
-                    <img
-                      src={imagePreviewUrls[currentImageIndex]}
-                      alt={`twitter-preview-${currentImageIndex}`}
-                      className="w-full h-full object-cover"
-                    />
+                    {renderImage(`twitter-preview-${currentImageIndex}`)}
 
                     {imagePreviewUrls.length > 1 && (
                       <>

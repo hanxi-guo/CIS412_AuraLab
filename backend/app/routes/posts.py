@@ -65,7 +65,12 @@ def get_post(post_id: str, session: Session = Depends(get_session)):
     post = post_service.get_post(session, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    return post_service.post_with_media(session, post)
+    result = post_service.post_with_media(session, post)
+    print(f"📤 [API] Fetching post {post_id}")
+    print(f"📤 [API] Media count: {len(result.media)}")
+    for idx, m in enumerate(result.media):
+        print(f"📤 [API] Media {idx}: {m.url}")
+    return result
 
 
 @router.put("/posts/{post_id}", response_model=PostOut)
